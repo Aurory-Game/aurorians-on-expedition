@@ -5,6 +5,8 @@ import assert from 'assert';
 import { createMint } from './utils/upload_nft';
 import fs from 'fs'
 
+// manually loading the idl as accessing anchor.workspace
+// trigers an error because metadata and vault program don't have idls
 const filepath = "target/idl/nft_staking.json"
 const idlStr = fs.readFileSync(filepath)
 const idl = JSON.parse(idlStr.toString())
