@@ -17,7 +17,7 @@ export async function createMint(
   lamports,
   data: any,
   json_url: string
-): Promise<[Keypair, programs.Transaction]> {
+): Promise<[Keypair, PublicKey, programs.Transaction]> {
   const mint = Keypair.generate();
   console.log(`https://solscan.io/token/${mint.publicKey.toString()}`);
   const tx_mint = new Transaction({ feePayer: fee_payer });
@@ -91,5 +91,5 @@ export async function createMint(
   );
 
   const tx = Transaction.fromCombined([tx_mint, tx_metadata]);
-  return [mint, tx];
+  return [mint, metadataPDA, tx];
 }

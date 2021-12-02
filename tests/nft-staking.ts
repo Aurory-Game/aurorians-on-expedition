@@ -1,28 +1,23 @@
 import * as anchor from '@project-serum/anchor';
-import { Program } from '@project-serum/anchor';
 import { TOKEN_PROGRAM_ID, Token } from '@solana/spl-token';
 import assert from 'assert';
 import { createMint } from './utils/upload_nft';
-import fs from 'fs'
+import fs from 'fs';
 
 // manually loading the idl as accessing anchor.workspace
 // trigers an error because metadata and vault program don't have idls
-const filepath = "target/idl/nft_staking.json"
-const idlStr = fs.readFileSync(filepath)
-const idl = JSON.parse(idlStr.toString())
+const filepath = 'target/idl/nft_staking.json';
+const idlStr = fs.readFileSync(filepath);
+const idl = JSON.parse(idlStr.toString());
 
 const envProvider = anchor.Provider.env();
 let provider = envProvider;
 
-let program
+let program;
 function setProvider(p: anchor.Provider) {
   provider = p;
   anchor.setProvider(p);
-  program = new anchor.Program(
-    idl,
-    idl.metadata.address,
-    p
-  )
+  program = new anchor.Program(idl, idl.metadata.address, p);
 }
 setProvider(provider);
 
@@ -30,6 +25,10 @@ describe('nft-staking', () => {
   //the program's account for stored initializer key
   let stakingPubkey;
   let stakingBump;
+
+  //nft mint and metadata
+  let mintPubkey;
+  let metadataPubkey;
 
   it('Mint NFT', async () => {
     const data = {
@@ -57,7 +56,7 @@ describe('nft-staking', () => {
         category: 'video',
         creators: [
           {
-            address: '2j85gueUvAFeFEdKZE5yKAvyAsU8fKKZvxX8zLbX8GCc',
+            address: provider.wallet.publicKey,
             share: 100,
           },
         ],
@@ -67,16 +66,19 @@ describe('nft-staking', () => {
     const lamports = await Token.getMinBalanceRentForExemptMint(
       provider.connection
     );
-    const [keypair, tx] = await createMint(
+    const [mint, metadataPDA, tx] = await createMint(
       provider.wallet.publicKey,
       provider.wallet.publicKey,
       lamports,
       data,
       json_url
     );
-    const signers = [keypair];
+    const signers = [mint];
 
     await provider.send(tx, signers);
+
+    mintPubkey = mint.publicKey;
+    metadataPubkey = metadataPDA;
   });
 
   it('Is initialized!', async () => {
@@ -95,5 +97,40 @@ describe('nft-staking', () => {
         rent: anchor.web3.SYSVAR_RENT_PUBKEY,
       },
     });
+  });
+
+  it('Stake match NFT', async () => {
+    await program.rpc.stake(stakingBump, {
+      accounts: {
+        tokenFromAuthority: provider.wallet.publicKey,
+        tokenMetadata: metadataPubkey,
+        stakingAccount: stakingPubkey,
+      },
+    });
+  });
+
+  it('Update initializer', async () => {
+    await program.rpc.updateInitializer(stakingBump, {
+      accounts: {
+        initializer: provider.wallet.publicKey,
+        newInitializer: '2j85gueUvAFeFEdKZE5yKAvyAsU8fKKZvxX8zLbX8GCc',
+        stakingAccount: stakingPubkey,
+      },
+    });
+  });
+
+  it('Stake non-match NFT', async () => {
+    await assert.rejects(
+      async () => {
+        await program.rpc.stake(stakingBump, {
+          accounts: {
+            tokenFromAuthority: provider.wallet.publicKey,
+            tokenMetadata: metadataPubkey,
+            stakingAccount: stakingPubkey,
+          },
+        });
+      },
+      { code: 300, msg: 'NoCreatorsFoundInMetadata' }
+    );
   });
 });

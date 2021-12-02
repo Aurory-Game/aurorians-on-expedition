@@ -19,6 +19,15 @@ pub mod nft_staking {
         Ok(())
     }
 
+    pub fn update_initializer(
+        ctx: Context<UpdateInitializer>,
+        _nonce_staking: u8,
+    ) -> ProgramResult {
+        ctx.accounts.staking_account.initializer_key = *ctx.accounts.new_initializer.key;
+
+        Ok(())
+    }
+
     pub fn stake(ctx: Context<Stake>, _nonce_staking: u8) -> ProgramResult {
         let token_metadata = &ctx.accounts.token_metadata;
         let metadata = Metadata::from_account_info(&token_metadata)?;
@@ -26,25 +35,17 @@ pub mod nft_staking {
         match metadata.data.creators {
             Some(creators) => {
                 for creator in creators {
-                    assert_keys_equal(
-                        creator.address,
-                        ctx.accounts.staking_account.initializer_key,
-                    )?;
+                    if creator.address == ctx.accounts.staking_account.initializer_key {
+                        return Ok(());
+                    }
                 }
+
+                return Err(ErrorCode::NoCreatorsFoundInMetadata.into());
             }
             None => {
-                msg!("No creators found in metadata");
+                return Err(ErrorCode::NoCreatorsFoundInMetadata.into());
             }
-        }
-        Ok(())
-    }
-}
-
-pub fn assert_keys_equal(key1: Pubkey, key2: Pubkey) -> ProgramResult {
-    if key1 != key2 {
-        Err(ErrorCode::PublicKeyMismatch.into())
-    } else {
-        Ok(())
+        };
     }
 }
 
@@ -67,6 +68,22 @@ pub struct Initialize<'info> {
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+#[instruction(_nonce_staking: u8)]
+pub struct UpdateInitializer<'info> {
+    pub initializer: Signer<'info>,
+
+    pub new_initializer: AccountInfo<'info>,
+
+    #[account(
+        mut,
+        seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
+        bump = _nonce_staking,
+        constraint = staking_account.initializer_key == *initializer.key
+    )]
+    pub staking_account: ProgramAccount<'info, StakingAccount>,
 }
 
 #[derive(Accounts)]
@@ -95,6 +112,6 @@ pub struct StakingAccount {
 
 #[error]
 pub enum ErrorCode {
-    #[msg("PublicKeyMismatch")]
-    PublicKeyMismatch,
+    #[msg("NoCreatorsFoundInMetadata")]
+    NoCreatorsFoundInMetadata,
 }
