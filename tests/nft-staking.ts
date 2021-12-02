@@ -2,21 +2,25 @@ import * as anchor from '@project-serum/anchor';
 import { Program } from '@project-serum/anchor';
 import { TOKEN_PROGRAM_ID, Token } from '@solana/spl-token';
 import assert from 'assert';
-import { NftStaking } from '../target/types/nft_staking';
 import { createMint } from './utils/upload_nft';
+import fs from 'fs'
 
-let program = anchor.workspace.NftStaking as Program<NftStaking>;
+const filepath = "target/idl/nft_staking.json"
+const idlStr = fs.readFileSync(filepath)
+const idl = JSON.parse(idlStr.toString())
+
 const envProvider = anchor.Provider.env();
 let provider = envProvider;
 
+let program
 function setProvider(p: anchor.Provider) {
   provider = p;
   anchor.setProvider(p);
   program = new anchor.Program(
-    program.idl,
-    program.programId,
+    idl,
+    idl.metadata.address,
     p
-  ) as Program<NftStaking>;
+  )
 }
 setProvider(provider);
 
