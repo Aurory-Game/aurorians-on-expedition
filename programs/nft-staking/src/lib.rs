@@ -35,7 +35,9 @@ pub mod nft_staking {
         match metadata.data.creators {
             Some(creators) => {
                 for creator in creators {
-                    if creator.address == ctx.accounts.staking_account.initializer_key {
+                    if creator.verified
+                        && creator.address == ctx.accounts.staking_account.initializer_key
+                    {
                         return Ok(());
                     }
                 }
