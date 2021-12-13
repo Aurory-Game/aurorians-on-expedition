@@ -28,23 +28,39 @@ pub mod nft_staking {
         ctx: Context<Initialize>,
         _nonce_token_vault: u8,
         _nonce_staking: u8,
+        authorized_creator: Pubkey,
         rewards_per_ts: u64,
     ) -> ProgramResult {
-        ctx.accounts.staking_account.initializer_key = *ctx.accounts.initializer.key;
+        ctx.accounts.staking_account.admin_key = *ctx.accounts.initializer.key;
+        ctx.accounts.staking_account.authorized_creator = authorized_creator;
         ctx.accounts.staking_account.rewards_per_ts = rewards_per_ts;
 
         Ok(())
     }
 
-    pub fn update_initializer(
-        ctx: Context<UpdateInitializer>,
+    #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
+    pub fn update_admin(
+        ctx: Context<UpdateAdmin>,
         _nonce_staking: u8,
+        new_admin: Pubkey,
     ) -> ProgramResult {
-        ctx.accounts.staking_account.initializer_key = *ctx.accounts.new_initializer.key;
+        ctx.accounts.staking_account.admin_key = new_admin;
 
         Ok(())
     }
 
+    #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
+    pub fn update_authorized_creator(
+        ctx: Context<UpdateAuthorizedCreator>,
+        _nonce_staking: u8,
+        new_authorized_creator: Pubkey,
+    ) -> ProgramResult {
+        ctx.accounts.staking_account.authorized_creator = new_authorized_creator;
+
+        Ok(())
+    }
+
+    #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
     pub fn update_rewards_per_ts(
         ctx: Context<UpdateRewardsPerTs>,
         _nonce_staking: u8,
@@ -55,6 +71,7 @@ pub mod nft_staking {
         Ok(())
     }
 
+    #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
     pub fn toggle_freeze_program(ctx: Context<FreezeProgram>, _nonce_staking: u8) -> ProgramResult {
         ctx.accounts.staking_account.freeze_program = !ctx.accounts.staking_account.freeze_program;
 
@@ -75,7 +92,7 @@ pub mod nft_staking {
             Some(creators) => {
                 for creator in creators {
                     if creator.verified
-                        && creator.address == ctx.accounts.staking_account.initializer_key
+                        && creator.address == ctx.accounts.staking_account.authorized_creator
                     {
                         // transfer nft to nft vault
                         spl_token_transfer(TokenTransferParams {
@@ -89,22 +106,22 @@ pub mod nft_staking {
 
                         // transfer rewards to user
                         // compute token vault signer seeds
-                        let token_mint_key = ctx.accounts.token_mint.key();
-                        let seeds = &[token_mint_key.as_ref(), &[nonce_token_vault]];
-                        let signer = &seeds[..];
-                        let rewards = update_user_staking(
-                            &ctx.accounts.staking_account,
-                            &mut ctx.accounts.user_staking_account,
-                        );
+                        // let token_mint_key = ctx.accounts.token_mint.key();
+                        // let seeds = &[token_mint_key.as_ref(), &[nonce_token_vault]];
+                        // let signer = &seeds[..];
+                        // let rewards = update_user_staking(
+                        //     &ctx.accounts.staking_account,
+                        //     &mut ctx.accounts.user_staking_account,
+                        // );
 
-                        spl_token_transfer(TokenTransferParams {
-                            source: ctx.accounts.token_vault.to_account_info(),
-                            destination: ctx.accounts.token_to.to_account_info(),
-                            authority: ctx.accounts.token_vault.to_account_info(),
-                            authority_signer_seeds: signer,
-                            token_program: ctx.accounts.token_program.to_account_info(),
-                            amount: rewards,
-                        })?;
+                        // spl_token_transfer(TokenTransferParams {
+                        //     source: ctx.accounts.token_vault.to_account_info(),
+                        //     destination: ctx.accounts.token_to.to_account_info(),
+                        //     authority: ctx.accounts.token_vault.to_account_info(),
+                        //     authority_signer_seeds: signer,
+                        //     token_program: ctx.accounts.token_program.to_account_info(),
+                        //     amount: rewards,
+                        // })?;
 
                         // update user staking hashes & nft_mint_keys
                         ctx.accounts.user_staking_account.hashes =
@@ -171,22 +188,22 @@ pub mod nft_staking {
 
                     // transfer rewards to user
                     // compute token vault signer seeds
-                    let token_mint_key = ctx.accounts.token_mint.key();
-                    let token_seeds = &[token_mint_key.as_ref(), &[nonce_token_vault]];
-                    let token_signer = &token_seeds[..];
-                    let rewards = update_user_staking(
-                        &ctx.accounts.staking_account,
-                        &mut ctx.accounts.user_staking_account,
-                    );
+                    // let token_mint_key = ctx.accounts.token_mint.key();
+                    // let token_seeds = &[token_mint_key.as_ref(), &[nonce_token_vault]];
+                    // let token_signer = &token_seeds[..];
+                    // let rewards = update_user_staking(
+                    //     &ctx.accounts.staking_account,
+                    //     &mut ctx.accounts.user_staking_account,
+                    // );
 
-                    spl_token_transfer(TokenTransferParams {
-                        source: ctx.accounts.token_vault.to_account_info(),
-                        destination: ctx.accounts.token_to.to_account_info(),
-                        authority: ctx.accounts.token_vault.to_account_info(),
-                        authority_signer_seeds: token_signer,
-                        token_program: ctx.accounts.token_program.to_account_info(),
-                        amount: rewards,
-                    })?;
+                    // spl_token_transfer(TokenTransferParams {
+                    //     source: ctx.accounts.token_vault.to_account_info(),
+                    //     destination: ctx.accounts.token_to.to_account_info(),
+                    //     authority: ctx.accounts.token_vault.to_account_info(),
+                    //     authority_signer_seeds: token_signer,
+                    //     token_program: ctx.accounts.token_program.to_account_info(),
+                    //     amount: rewards,
+                    // })?;
 
                     // update user staking hashes & nft_mint_keys
                     ctx.accounts.user_staking_account.hashes =
@@ -223,22 +240,22 @@ pub mod nft_staking {
     ) -> ProgramResult {
         // transfer rewards to user
         // compute token vault signer seeds
-        let token_mint_key = ctx.accounts.token_mint.key();
-        let token_seeds = &[token_mint_key.as_ref(), &[nonce_token_vault]];
-        let token_signer = &token_seeds[..];
-        let rewards = update_user_staking(
-            &ctx.accounts.staking_account,
-            &mut ctx.accounts.user_staking_account,
-        );
+        // let token_mint_key = ctx.accounts.token_mint.key();
+        // let token_seeds = &[token_mint_key.as_ref(), &[nonce_token_vault]];
+        // let token_signer = &token_seeds[..];
+        // let rewards = update_user_staking(
+        //     &ctx.accounts.staking_account,
+        //     &mut ctx.accounts.user_staking_account,
+        // );
 
-        spl_token_transfer(TokenTransferParams {
-            source: ctx.accounts.token_vault.to_account_info(),
-            destination: ctx.accounts.token_to.to_account_info(),
-            authority: ctx.accounts.token_vault.to_account_info(),
-            authority_signer_seeds: token_signer,
-            token_program: ctx.accounts.token_program.to_account_info(),
-            amount: rewards,
-        })?;
+        // spl_token_transfer(TokenTransferParams {
+        //     source: ctx.accounts.token_vault.to_account_info(),
+        //     destination: ctx.accounts.token_to.to_account_info(),
+        //     authority: ctx.accounts.token_vault.to_account_info(),
+        //     authority_signer_seeds: token_signer,
+        //     token_program: ctx.accounts.token_program.to_account_info(),
+        //     amount: rewards,
+        // })?;
 
         return Ok(());
     }
@@ -309,32 +326,41 @@ pub struct Initialize<'info> {
 
 #[derive(Accounts)]
 #[instruction(_nonce_staking: u8)]
-pub struct UpdateInitializer<'info> {
+pub struct UpdateAdmin<'info> {
     #[account(
         mut,
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
-        constraint = staking_account.initializer_key == *initializer.key
     )]
     pub staking_account: ProgramAccount<'info, StakingAccount>,
 
-    pub initializer: Signer<'info>,
+    pub admin: Signer<'info>,
+}
 
-    pub new_initializer: AccountInfo<'info>,
+#[derive(Accounts)]
+#[instruction(_nonce_staking: u8)]
+pub struct UpdateAuthorizedCreator<'info> {
+    #[account(
+        mut,
+        seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
+        bump = _nonce_staking,
+    )]
+    pub staking_account: ProgramAccount<'info, StakingAccount>,
+
+    pub admin: Signer<'info>,
 }
 
 #[derive(Accounts)]
 #[instruction(_nonce_staking: u8)]
 pub struct UpdateRewardsPerTs<'info> {
-    pub initializer: Signer<'info>,
-
     #[account(
         mut,
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
-        constraint = staking_account.initializer_key == *initializer.key
     )]
     pub staking_account: ProgramAccount<'info, StakingAccount>,
+
+    pub admin: Signer<'info>,
 }
 
 #[derive(Accounts)]
@@ -344,11 +370,10 @@ pub struct FreezeProgram<'info> {
         mut,
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
-        constraint = staking_account.initializer_key == *initializer.key,
     )]
     pub staking_account: ProgramAccount<'info, StakingAccount>,
 
-    pub initializer: Signer<'info>,
+    pub admin: Signer<'info>,
 }
 
 #[derive(Accounts)]
@@ -377,6 +402,7 @@ pub struct Stake<'info> {
     #[account(mut)]
     pub nft_from: Box<Account<'info, TokenAccount>>,
 
+    #[account(mut)]
     pub nft_from_authority: Signer<'info>,
 
     #[account(
@@ -435,6 +461,7 @@ pub struct Unstake<'info> {
     #[account(mut)]
     pub nft_to: Box<Account<'info, TokenAccount>>,
 
+    #[account(mut)]
     pub nft_to_authority: Signer<'info>,
 
     #[account(
@@ -507,7 +534,8 @@ pub struct Claim<'info> {
 #[account]
 #[derive(Default)]
 pub struct StakingAccount {
-    pub initializer_key: Pubkey,
+    pub admin_key: Pubkey,
+    pub authorized_creator: Pubkey,
     pub freeze_program: bool,
     pub rewards_per_ts: u64,
     pub total_hashes: u64,
@@ -523,10 +551,24 @@ pub struct UserStakingAccount {
 
 #[error]
 pub enum ErrorCode {
+    #[msg("Not admin")]
+    NotAdmin,
     #[msg("No creators found in metadata")]
     NoCreatorsFoundInMetadata,
     #[msg("Token transfer failed")]
     TokenTransferFailed,
     #[msg("Not staked item")]
     NotStakedItem,
+}
+
+// Asserts the signer is admin
+fn is_admin<'info>(
+    staking_account: &ProgramAccount<'info, StakingAccount>,
+    signer: &Signer<'info>,
+) -> Result<()> {
+    if staking_account.admin_key != *signer.key {
+        return Err(ErrorCode::NotAdmin.into());
+    }
+
+    Ok(())
 }
