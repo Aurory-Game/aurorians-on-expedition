@@ -308,7 +308,7 @@ pub struct Initialize<'info> {
         payer = initializer,
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
-        space = 8 + 4 + 32 + 4 + 1 + 4 + 32 + 4 + 8 + 32 * 300 // active_rewards: 300
+        space = 8 + 32 + 1  + 32 + 8 + 4 + 32 * 300 // active_rewards: 300
     )]
     pub staking_account: ProgramAccount<'info, StakingAccount>,
 
