@@ -198,14 +198,6 @@ pub mod nft_staking {
                     .nft_mint_keys
                     .push(*ctx.accounts.nft_mint.key);
 
-                // update staking total hashes
-                ctx.accounts.staking_account.total_hashes =
-                    (ctx.accounts.staking_account.total_hashes as u128)
-                        .checked_add(1)
-                        .unwrap()
-                        .try_into()
-                        .unwrap();
-
                 return Ok(());
             }
             None => {
@@ -248,14 +240,6 @@ pub mod nft_staking {
                     .user_staking_account
                     .nft_mint_keys
                     .remove(index);
-
-                // update staking total hashes
-                ctx.accounts.staking_account.total_hashes =
-                    (ctx.accounts.staking_account.total_hashes as u128)
-                        .checked_sub(1)
-                        .unwrap()
-                        .try_into()
-                        .unwrap();
 
                 return Ok(());
             }
@@ -315,10 +299,9 @@ pub struct Initialize<'info> {
         // 32: admin_key
         // 1: freeze_program
         // 32: authorized_creator
-        // 8: total_hashes
         // 4: active_rewards Vec's length
         // 32 * 150: active_rewards limit 150
-        space = 8 + 32 + 1  + 32 + 8 + 4 + 32 * 300 // active_rewards: 300
+        space = 8 + 32 + 1  + 32 + 4 + 32 * 300 // active_rewards: 300
     )]
     pub staking_account: ProgramAccount<'info, StakingAccount>,
 
@@ -552,7 +535,6 @@ pub struct StakingAccount {
     pub admin_key: Pubkey,
     pub freeze_program: bool,
     pub authorized_creator: Pubkey,
-    pub total_hashes: u64,
     pub active_rewards: Vec<Pubkey>,
 }
 
