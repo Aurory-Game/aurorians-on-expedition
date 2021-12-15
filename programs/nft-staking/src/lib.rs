@@ -411,7 +411,6 @@ pub struct AddWinner<'info> {
 #[derive(Accounts)]
 #[instruction(_nonce_nft_vault: u8, _nonce_staking: u8, _nonce_user_staking: u8)]
 pub struct Stake<'info> {
-    #[account(mut)]
     pub nft_mint: UncheckedAccount<'info>,
 
     pub nft_metadata: UncheckedAccount<'info>,
