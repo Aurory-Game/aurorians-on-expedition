@@ -308,6 +308,13 @@ pub struct Initialize<'info> {
         payer = initializer,
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
+        // 8: account's signature on the anchor
+        // 32: admin_key
+        // 1: freeze_program
+        // 32: authorized_creator
+        // 8: total_hashes
+        // 4: active_rewards Vec's length
+        // 32 * 150: active_rewards limit 150
         space = 8 + 32 + 1  + 32 + 8 + 4 + 32 * 300 // active_rewards: 300
     )]
     pub staking_account: ProgramAccount<'info, StakingAccount>,
@@ -452,7 +459,12 @@ pub struct Stake<'info> {
         payer = nft_from_authority,
         seeds = [ nft_from_authority.key().as_ref() ],
         bump = _nonce_user_staking,
-        space = 8 + 4 + 32 * 150 + 4 + (32 + 2) * 150, // nft_mint_keys: 150, claimable: 150
+        // 8: account's signature on the anchor
+        // 4: nft_mint_keys Vec's length
+        // 32 * 150: nft_mint_keys limit 150
+        // 4: claimable Vec's length
+        // (32 + 2) * 150: claimable limit 150
+        space = 8 + 4 + 32 * 150 + 4 + (32 + 2) * 150,
     )]
     pub user_staking_account: ProgramAccount<'info, UserStakingAccount>,
 
