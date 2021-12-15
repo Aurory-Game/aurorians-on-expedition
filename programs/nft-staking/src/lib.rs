@@ -2,8 +2,9 @@ pub mod utils;
 
 use crate::utils::{spl_token_transfer, TokenTransferParams};
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Mint, Token, TokenAccount};
+use anchor_spl::token::{self, Mint, Token, TokenAccount};
 use metaplex_token_metadata::state::Metadata;
+use spl_token::instruction::AuthorityType;
 use std::convert::TryInto;
 
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
@@ -58,6 +59,55 @@ pub mod nft_staking {
         ctx.accounts.staking_account.authorized_creator = new_authorized_creator;
 
         Ok(())
+    }
+
+    #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
+    pub fn add_reward(
+        ctx: Context<AddReward>,
+        _nonce_staking: u8,
+        nft_mint: Pubkey,
+    ) -> ProgramResult {
+        for reward in &ctx.accounts.staking_account.active_rewards {
+            if reward == &nft_mint {
+                return Err(ErrorCode::InvalidMintForReward.into());
+            }
+        }
+
+        // add active reward
+        ctx.accounts.staking_account.active_rewards.push(nft_mint);
+
+        Ok(())
+    }
+
+    pub fn remove_reward(ctx: Context<RemoveReward>, nonce_staking: u8) -> ProgramResult {
+        for i in 0..ctx.accounts.staking_account.active_rewards.len() {
+            if ctx.accounts.staking_account.active_rewards[i] == *ctx.accounts.nft_mint.key {
+                // remove active reward
+                ctx.accounts.staking_account.active_rewards.remove(i);
+
+                // compute staking_account signer seeds
+                let seeds = &[constants::STAKING_PDA_SEED.as_ref(), &[nonce_staking]];
+                let signer = [&seeds[..]];
+
+                // transfer nft mint authority
+                let cpi_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    token::SetAuthority {
+                        current_authority: ctx.accounts.staking_account.to_account_info(),
+                        account_or_mint: ctx.accounts.nft_mint.to_account_info(),
+                    },
+                    &signer,
+                );
+                token::set_authority(
+                    cpi_ctx,
+                    AuthorityType::MintTokens,
+                    Some(*ctx.accounts.nft_mint_authority_to.key),
+                )?;
+
+                return Ok(());
+            }
+        }
+        return Err(ErrorCode::InvalidMintForReward.into());
     }
 
     #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
@@ -352,6 +402,40 @@ pub struct UpdateAuthorizedCreator<'info> {
 
 #[derive(Accounts)]
 #[instruction(_nonce_staking: u8)]
+pub struct AddReward<'info> {
+    #[account(
+        mut,
+        seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
+        bump = _nonce_staking,
+    )]
+    pub staking_account: ProgramAccount<'info, StakingAccount>,
+
+    pub admin: Signer<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(nonce_staking: u8)]
+pub struct RemoveReward<'info> {
+    #[account(
+        mut,
+        seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
+        bump = nonce_staking,
+    )]
+    pub staking_account: ProgramAccount<'info, StakingAccount>,
+
+    #[account(mut)]
+    pub nft_mint: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub nft_mint_authority_to: AccountInfo<'info>,
+
+    pub admin: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+#[instruction(_nonce_staking: u8)]
 pub struct UpdateRewardsPerTs<'info> {
     #[account(
         mut,
@@ -535,6 +619,7 @@ pub struct Claim<'info> {
 #[derive(Default)]
 pub struct StakingAccount {
     pub admin_key: Pubkey,
+    pub active_rewards: Vec<Pubkey>,
     pub authorized_creator: Pubkey,
     pub freeze_program: bool,
     pub rewards_per_ts: u64,
@@ -553,6 +638,8 @@ pub struct UserStakingAccount {
 pub enum ErrorCode {
     #[msg("Not admin")]
     NotAdmin,
+    #[msg("Invalid mint for reward")]
+    InvalidMintForReward,
     #[msg("No creators found in metadata")]
     NoCreatorsFoundInMetadata,
     #[msg("Token transfer failed")]
