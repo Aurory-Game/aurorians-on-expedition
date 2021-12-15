@@ -179,6 +179,9 @@ pub mod nft_staking {
                     return Err(ErrorCode::NoCreatorsFoundInMetadata.into());
                 }
 
+                // set user staking wallet
+                ctx.accounts.user_staking_account.wallet = *ctx.accounts.nft_from_authority.key;
+
                 // transfer nft to nft vault
                 spl_token_transfer(TokenTransferParams {
                     source: ctx.accounts.nft_from.to_account_info(),
@@ -460,11 +463,12 @@ pub struct Stake<'info> {
         seeds = [ nft_from_authority.key().as_ref() ],
         bump = _nonce_user_staking,
         // 8: account's signature on the anchor
+        // 32: wallet
         // 4: nft_mint_keys Vec's length
         // 32 * 150: nft_mint_keys limit 150
         // 4: claimable Vec's length
         // (32 + 2) * 150: claimable limit 150
-        space = 8 + 4 + 32 * 150 + 4 + (32 + 2) * 150,
+        space = 8 + 32 + 4 + 32 * 150 + 4 + (32 + 2) * 150,
     )]
     pub user_staking_account: ProgramAccount<'info, UserStakingAccount>,
 
@@ -555,6 +559,7 @@ pub struct StakingAccount {
 #[account]
 #[derive(Default)]
 pub struct UserStakingAccount {
+    pub wallet: Pubkey,
     pub nft_mint_keys: Vec<Pubkey>,
     pub claimable: Vec<(Pubkey, u16)>,
 }
