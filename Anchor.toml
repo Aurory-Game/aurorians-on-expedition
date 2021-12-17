@@ -1,3 +1,5 @@
+anchor_version = "0.19.0"
+
 [programs.localnet]
 nft_staking = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
 metaplex_token_metadata = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"

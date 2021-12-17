@@ -19,7 +19,7 @@ default = []
 local-testing = []
 
 [dependencies]
-anchor-lang = "0.18.0"
-anchor-spl = "0.18.0"
+anchor-lang = "0.19.0"
+anchor-spl = "0.19.0"
 spl-token = { version = "3.1.1", features = ["no-entrypoint"] }
 metaplex-token-metadata = {  path = "../token-metadata", version = "0.0.1", features = ["no-entrypoint"] }
