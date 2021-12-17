@@ -5,7 +5,6 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount};
 use metaplex_token_metadata::state::Metadata;
 use spl_token::instruction::AuthorityType;
-use std::convert::TryInto;
 
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 
@@ -143,16 +142,19 @@ pub mod nft_staking {
             .user_staking_account
             .claimable
             .iter()
-            .position(|(nft_mint, _)| nft_mint == ctx.accounts.nft_mint.key)
+            .position(|claimable_token| claimable_token.nft_mint == *ctx.accounts.nft_mint.key)
         {
             Some(index) => {
-                ctx.accounts.user_staking_account.claimable[index].1 += 1;
+                ctx.accounts.user_staking_account.claimable[index].amount += 1;
             }
             None => {
                 ctx.accounts
                     .user_staking_account
                     .claimable
-                    .push((*ctx.accounts.nft_mint.key, 1));
+                    .push(ClaimableToken {
+                        nft_mint: *ctx.accounts.nft_mint.key,
+                        amount: 1,
+                    });
             }
         }
 
@@ -255,10 +257,10 @@ pub mod nft_staking {
             .user_staking_account
             .claimable
             .iter()
-            .position(|(nft_mint, _)| nft_mint == ctx.accounts.nft_mint.key)
+            .position(|claimable_token| claimable_token.nft_mint == *ctx.accounts.nft_mint.key)
         {
             Some(index) => {
-                let (_, claimable_amount) = ctx.accounts.user_staking_account.claimable[index];
+                let claimable_token = ctx.accounts.user_staking_account.claimable[index];
 
                 // remove claimed item from user
                 ctx.accounts.user_staking_account.claimable.remove(index);
@@ -272,7 +274,7 @@ pub mod nft_staking {
                 spl_token_mint(TokenMintParams {
                     mint: ctx.accounts.nft_mint.to_account_info(),
                     to: ctx.accounts.nft_to.to_account_info(),
-                    amount: claimable_amount as u64,
+                    amount: claimable_token.amount as u64,
                     owner: ctx.accounts.staking_account.to_account_info(),
                     owner_signer_seeds: staking_account_signer,
                     token_program: ctx.accounts.token_program.to_account_info(),
@@ -303,7 +305,7 @@ pub struct Initialize<'info> {
         // 32 * 150: active_rewards limit 150
         space = 8 + 32 + 1  + 32 + 4 + 32 * 300 // active_rewards: 300
     )]
-    pub staking_account: ProgramAccount<'info, StakingAccount>,
+    pub staking_account: Account<'info, StakingAccount>,
 
     #[account(mut)]
     pub initializer: Signer<'info>,
@@ -321,7 +323,7 @@ pub struct FreezeProgram<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
     )]
-    pub staking_account: ProgramAccount<'info, StakingAccount>,
+    pub staking_account: Account<'info, StakingAccount>,
 
     pub admin: Signer<'info>,
 }
@@ -334,7 +336,7 @@ pub struct UpdateAdmin<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
     )]
-    pub staking_account: ProgramAccount<'info, StakingAccount>,
+    pub staking_account: Account<'info, StakingAccount>,
 
     pub admin: Signer<'info>,
 }
@@ -347,7 +349,7 @@ pub struct UpdateAuthorizedCreator<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
     )]
-    pub staking_account: ProgramAccount<'info, StakingAccount>,
+    pub staking_account: Account<'info, StakingAccount>,
 
     pub admin: Signer<'info>,
 }
@@ -360,7 +362,7 @@ pub struct AddReward<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
     )]
-    pub staking_account: ProgramAccount<'info, StakingAccount>,
+    pub staking_account: Account<'info, StakingAccount>,
 
     pub admin: Signer<'info>,
 }
@@ -373,7 +375,7 @@ pub struct RemoveReward<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = nonce_staking,
     )]
-    pub staking_account: ProgramAccount<'info, StakingAccount>,
+    pub staking_account: Account<'info, StakingAccount>,
 
     #[account(mut)]
     pub nft_mint: UncheckedAccount<'info>,
@@ -396,14 +398,14 @@ pub struct AddWinner<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
     )]
-    pub staking_account: ProgramAccount<'info, StakingAccount>,
+    pub staking_account: Account<'info, StakingAccount>,
 
     #[account(
         mut,
         seeds = [ _winner.as_ref() ],
         bump = _nonce_user_staking,
     )]
-    pub user_staking_account: ProgramAccount<'info, UserStakingAccount>,
+    pub user_staking_account: Account<'info, UserStakingAccount>,
 
     pub admin: Signer<'info>,
 }
@@ -437,7 +439,7 @@ pub struct Stake<'info> {
         bump = _nonce_staking,
         constraint = !staking_account.freeze_program,
     )]
-    pub staking_account: ProgramAccount<'info, StakingAccount>,
+    pub staking_account: Account<'info, StakingAccount>,
 
     #[account(
         init_if_needed,
@@ -452,7 +454,7 @@ pub struct Stake<'info> {
         // (32 + 2) * 150: claimable limit 150
         space = 8 + 32 + 4 + 32 * 150 + 4 + (32 + 2) * 150,
     )]
-    pub user_staking_account: ProgramAccount<'info, UserStakingAccount>,
+    pub user_staking_account: Account<'info, UserStakingAccount>,
 
     ///used by anchor for init of the token
     pub system_program: Program<'info, System>,
@@ -485,14 +487,14 @@ pub struct Unstake<'info> {
         bump = _nonce_staking,
         constraint = !staking_account.freeze_program,
     )]
-    pub staking_account: ProgramAccount<'info, StakingAccount>,
+    pub staking_account: Account<'info, StakingAccount>,
 
     #[account(
         mut,
         seeds = [ nft_to_authority.key().as_ref() ],
         bump = _nonce_user_staking,
     )]
-    pub user_staking_account: ProgramAccount<'info, UserStakingAccount>,
+    pub user_staking_account: Account<'info, UserStakingAccount>,
 
     ///used by anchor for init of the token
     pub system_program: Program<'info, System>,
@@ -516,14 +518,14 @@ pub struct Claim<'info> {
         bump = nonce_staking,
         constraint = !staking_account.freeze_program,
     )]
-    pub staking_account: ProgramAccount<'info, StakingAccount>,
+    pub staking_account: Account<'info, StakingAccount>,
 
     #[account(
         mut,
         seeds = [ nft_to_authority.key().as_ref() ],
         bump = _nonce_user_staking,
     )]
-    pub user_staking_account: ProgramAccount<'info, UserStakingAccount>,
+    pub user_staking_account: Account<'info, UserStakingAccount>,
 
     pub token_program: Program<'info, Token>,
 }
@@ -537,35 +539,41 @@ pub struct StakingAccount {
     pub active_rewards: Vec<Pubkey>,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Copy, Clone, Default)]
+pub struct ClaimableToken {
+    pub nft_mint: Pubkey,
+    pub amount: u16,
+}
+
 #[account]
 #[derive(Default)]
 pub struct UserStakingAccount {
     pub wallet: Pubkey,
     pub nft_mint_keys: Vec<Pubkey>,
-    pub claimable: Vec<(Pubkey, u16)>,
+    pub claimable: Vec<ClaimableToken>,
 }
 
 #[error]
 pub enum ErrorCode {
     #[msg("Not admin")]
-    NotAdmin, // 300, 0x12c
+    NotAdmin, // 6000, 0x1770
     #[msg("Invalid mint for reward")]
-    InvalidMintForReward, // 301, 0x12d
+    InvalidMintForReward, // 6001, 0x1771
     #[msg("No creators found in metadata")]
-    NoCreatorsFoundInMetadata, // 302, 0x12e
+    NoCreatorsFoundInMetadata, // 6002, 0x1772
     #[msg("Token transfer failed")]
-    TokenTransferFailed, // 303, 0x12f
+    TokenTransferFailed, // 6003, 0x1773
     #[msg("Token mint failed")]
-    TokenMintFailed, // 304, 0x130
+    TokenMintFailed, // 6004, 0x1774
     #[msg("Not staked item")]
-    NotStakedItem, // 305, 0x131
+    NotStakedItem, // 6005, 0x1775
     #[msg("Not claimable item")]
-    NotClaimableItem, // 306, 0x132
+    NotClaimableItem, // 6006, 0x1776
 }
 
 // Asserts the signer is admin
 fn is_admin<'info>(
-    staking_account: &ProgramAccount<'info, StakingAccount>,
+    staking_account: &Account<'info, StakingAccount>,
     signer: &Signer<'info>,
 ) -> Result<()> {
     if staking_account.admin_key != *signer.key {
