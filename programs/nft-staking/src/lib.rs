@@ -305,7 +305,7 @@ pub struct Initialize<'info> {
         // 32 * 150: active_rewards limit 150
         space = 8 + 32 + 1  + 32 + 4 + 32 * 300 // active_rewards: 300
     )]
-    pub staking_account: Account<'info, StakingAccount>,
+    pub staking_account: Box<Account<'info, StakingAccount>>,
 
     #[account(mut)]
     pub initializer: Signer<'info>,
@@ -323,7 +323,7 @@ pub struct FreezeProgram<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
     )]
-    pub staking_account: Account<'info, StakingAccount>,
+    pub staking_account: Box<Account<'info, StakingAccount>>,
 
     pub admin: Signer<'info>,
 }
@@ -336,7 +336,7 @@ pub struct UpdateAdmin<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
     )]
-    pub staking_account: Account<'info, StakingAccount>,
+    pub staking_account: Box<Account<'info, StakingAccount>>,
 
     pub admin: Signer<'info>,
 }
@@ -349,7 +349,7 @@ pub struct UpdateAuthorizedCreator<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
     )]
-    pub staking_account: Account<'info, StakingAccount>,
+    pub staking_account: Box<Account<'info, StakingAccount>>,
 
     pub admin: Signer<'info>,
 }
@@ -362,7 +362,7 @@ pub struct AddReward<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
     )]
-    pub staking_account: Account<'info, StakingAccount>,
+    pub staking_account: Box<Account<'info, StakingAccount>>,
 
     pub admin: Signer<'info>,
 }
@@ -375,7 +375,7 @@ pub struct RemoveReward<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = nonce_staking,
     )]
-    pub staking_account: Account<'info, StakingAccount>,
+    pub staking_account: Box<Account<'info, StakingAccount>>,
 
     #[account(mut)]
     pub nft_mint: UncheckedAccount<'info>,
@@ -398,14 +398,14 @@ pub struct AddWinner<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
     )]
-    pub staking_account: Account<'info, StakingAccount>,
+    pub staking_account: Box<Account<'info, StakingAccount>>,
 
     #[account(
         mut,
         seeds = [ _winner.as_ref() ],
         bump = _nonce_user_staking,
     )]
-    pub user_staking_account: Account<'info, UserStakingAccount>,
+    pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
 
     pub admin: Signer<'info>,
 }
@@ -439,7 +439,7 @@ pub struct Stake<'info> {
         bump = _nonce_staking,
         constraint = !staking_account.freeze_program,
     )]
-    pub staking_account: Account<'info, StakingAccount>,
+    pub staking_account: Box<Account<'info, StakingAccount>>,
 
     #[account(
         init_if_needed,
@@ -454,7 +454,7 @@ pub struct Stake<'info> {
         // (32 + 2) * 150: claimable limit 150
         space = 8 + 32 + 4 + 32 * 150 + 4 + (32 + 2) * 150,
     )]
-    pub user_staking_account: Account<'info, UserStakingAccount>,
+    pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
 
     ///used by anchor for init of the token
     pub system_program: Program<'info, System>,
@@ -487,14 +487,14 @@ pub struct Unstake<'info> {
         bump = _nonce_staking,
         constraint = !staking_account.freeze_program,
     )]
-    pub staking_account: Account<'info, StakingAccount>,
+    pub staking_account: Box<Account<'info, StakingAccount>>,
 
     #[account(
         mut,
         seeds = [ nft_to_authority.key().as_ref() ],
         bump = _nonce_user_staking,
     )]
-    pub user_staking_account: Account<'info, UserStakingAccount>,
+    pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
 
     ///used by anchor for init of the token
     pub system_program: Program<'info, System>,
@@ -518,14 +518,14 @@ pub struct Claim<'info> {
         bump = nonce_staking,
         constraint = !staking_account.freeze_program,
     )]
-    pub staking_account: Account<'info, StakingAccount>,
+    pub staking_account: Box<Account<'info, StakingAccount>>,
 
     #[account(
         mut,
         seeds = [ nft_to_authority.key().as_ref() ],
         bump = _nonce_user_staking,
     )]
-    pub user_staking_account: Account<'info, UserStakingAccount>,
+    pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
 
     pub token_program: Program<'info, Token>,
 }
