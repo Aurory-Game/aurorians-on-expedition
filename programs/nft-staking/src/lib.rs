@@ -290,7 +290,7 @@ pub mod nft_staking {
 }
 
 #[derive(Accounts)]
-#[instruction(_nonce_token_vault: u8, _nonce_staking: u8)]
+#[instruction(_nonce_staking: u8)]
 pub struct Initialize<'info> {
     #[account(
         init,

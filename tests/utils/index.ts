@@ -6,6 +6,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 import { Token } from '@solana/spl-token';
+import { Provider } from '@project-serum/anchor';
 
 const { Metadata, MetadataDataData, CreateMetadata, Creator } =
   programs.metadata;
@@ -92,4 +93,23 @@ export async function createMint(
 
   const tx = Transaction.fromCombined([tx_mint, tx_metadata]);
   return [mint, metadataPDA, tx];
+}
+
+export async function setMintAuthority(
+  provider: Provider,
+  mint: PublicKey,
+  newAuthority: PublicKey
+) {
+  const tx = new Transaction();
+  tx.add(
+    Token.createSetAuthorityInstruction(
+      TOKEN_PROGRAM_ID,
+      mint,
+      newAuthority,
+      'MintTokens',
+      provider.wallet.publicKey,
+      []
+    )
+  );
+  await provider.send(tx);
 }
