@@ -38,7 +38,6 @@ pub struct TokenMintParams<'a: 'b, 'b> {
     pub token_program: AccountInfo<'a>,
 }
 
-#[inline(always)]
 pub fn spl_token_transfer(params: TokenTransferParams<'_, '_>) -> ProgramResult {
     let TokenTransferParams {
         source,
@@ -65,7 +64,6 @@ pub fn spl_token_transfer(params: TokenTransferParams<'_, '_>) -> ProgramResult 
     result.map_err(|_| ErrorCode::TokenTransferFailed.into())
 }
 
-#[inline(always)]
 pub fn spl_token_mint(params: TokenMintParams<'_, '_>) -> ProgramResult {
     let TokenMintParams {
         mint,

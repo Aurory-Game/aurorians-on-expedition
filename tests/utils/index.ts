@@ -113,3 +113,23 @@ export async function setMintAuthority(
   );
   await provider.send(tx);
 }
+
+export async function mintToAccount(
+  provider: Provider,
+  mint: PublicKey,
+  destination: PublicKey,
+  amount: number
+) {
+  const tx = new Transaction();
+  tx.add(
+    Token.createMintToInstruction(
+      TOKEN_PROGRAM_ID,
+      mint,
+      destination,
+      provider.wallet.publicKey,
+      [],
+      amount
+    )
+  );
+  await provider.send(tx);
+}

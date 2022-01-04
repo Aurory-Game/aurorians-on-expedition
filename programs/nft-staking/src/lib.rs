@@ -65,6 +65,59 @@ pub mod nft_staking {
     }
 
     #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
+    pub fn add_authorized_name_starts(
+        ctx: Context<UpdateAuthorizedCreator>,
+        _nonce_staking: u8,
+        new_authorized_name_starts: Vec<String>,
+    ) -> ProgramResult {
+        for new_authorized_name_start in new_authorized_name_starts.iter() {
+            if ctx
+                .accounts
+                .staking_account
+                .authorized_name_starts
+                .iter()
+                .find(|&authorized_name_start| authorized_name_start == new_authorized_name_start)
+                == None
+            {
+                ctx.accounts
+                    .staking_account
+                    .authorized_name_starts
+                    .push(new_authorized_name_start.to_string());
+            }
+        }
+
+        Ok(())
+    }
+
+    #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
+    pub fn remove_authorized_name_starts(
+        ctx: Context<RemoveAuthorizedNameStarts>,
+        _nonce_staking: u8,
+        old_authorized_name_starts: Vec<String>,
+    ) -> ProgramResult {
+        for old_authorized_name_start in old_authorized_name_starts.iter() {
+            match ctx
+                .accounts
+                .staking_account
+                .authorized_name_starts
+                .iter()
+                .position(|authorized_name_start| {
+                    authorized_name_start == old_authorized_name_start
+                }) {
+                Some(index) => {
+                    ctx.accounts
+                        .staking_account
+                        .authorized_name_starts
+                        .remove(index);
+                }
+                None => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
     pub fn add_reward(
         ctx: Context<AddReward>,
         _nonce_staking: u8,
@@ -170,6 +223,23 @@ pub mod nft_staking {
         let nft_metadata = &ctx.accounts.nft_metadata;
         let metadata = Metadata::from_account_info(&nft_metadata)?;
 
+        // determine authorized name start
+        if ctx
+            .accounts
+            .staking_account
+            .authorized_name_starts
+            .iter()
+            .find(|&authorized_name_start| {
+                metadata
+                    .data
+                    .name
+                    .starts_with(&authorized_name_start.to_string())
+            })
+            == None
+        {
+            return Err(ErrorCode::NoAuthorizedNameStartFoundInMetadata.into());
+        }
+
         match metadata.data.creators {
             Some(creators) => {
                 // determine authorized creator
@@ -178,7 +248,7 @@ pub mod nft_staking {
                         && creator.address == ctx.accounts.staking_account.authorized_creator
                 }) == None
                 {
-                    return Err(ErrorCode::NoCreatorsFoundInMetadata.into());
+                    return Err(ErrorCode::NoAuthorizedCreatorsFoundInMetadata.into());
                 }
 
                 // set user staking wallet
@@ -203,7 +273,7 @@ pub mod nft_staking {
                 return Ok(());
             }
             None => {
-                return Err(ErrorCode::NoCreatorsFoundInMetadata.into());
+                return Err(ErrorCode::NoAuthorizedCreatorsFoundInMetadata.into());
             }
         };
     }
@@ -214,6 +284,10 @@ pub mod nft_staking {
         _nonce_staking: u8,
         _nonce_user_staking: u8,
     ) -> ProgramResult {
+        if ctx.accounts.user_staking_account.claimable.len() > 0 {
+            return Err(ErrorCode::CantUnstakeBeforeClaim.into());
+        }
+
         match ctx
             .accounts
             .user_staking_account
@@ -265,6 +339,18 @@ pub mod nft_staking {
                 // remove claimed item from user
                 ctx.accounts.user_staking_account.claimable.remove(index);
 
+                // check if claim token is active reward
+                if ctx
+                    .accounts
+                    .staking_account
+                    .active_rewards
+                    .iter()
+                    .find(|&&active_reward| active_reward == claimable_token.nft_mint)
+                    == None
+                {
+                    return Ok(());
+                }
+
                 // compute staking account signer seeds
                 let staking_account_seeds =
                     &[constants::STAKING_PDA_SEED.as_ref(), &[nonce_staking]];
@@ -301,9 +387,11 @@ pub struct Initialize<'info> {
         // 32: admin_key
         // 1: freeze_program
         // 32: authorized_creator
+        // 4: authorized_name_starts Vec's length
+        // 32 * 150: authorized_name_starts limit 150 and max_length 32
         // 4: active_rewards Vec's length
         // 32 * 150: active_rewards limit 150
-        space = 8 + 32 + 1  + 32 + 4 + 32 * 300 // active_rewards: 300
+        space = 8 + 32 + 1 + 32 + 4 + 32 * 150 + 4 + 32 * 150 // active_rewards: 300
     )]
     pub staking_account: Box<Account<'info, StakingAccount>>,
 
@@ -344,6 +432,32 @@ pub struct UpdateAdmin<'info> {
 #[derive(Accounts)]
 #[instruction(_nonce_staking: u8)]
 pub struct UpdateAuthorizedCreator<'info> {
+    #[account(
+        mut,
+        seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
+        bump = _nonce_staking,
+    )]
+    pub staking_account: Box<Account<'info, StakingAccount>>,
+
+    pub admin: Signer<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(_nonce_staking: u8)]
+pub struct AddAuthorizedNameStarts<'info> {
+    #[account(
+        mut,
+        seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
+        bump = _nonce_staking,
+    )]
+    pub staking_account: Box<Account<'info, StakingAccount>>,
+
+    pub admin: Signer<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(_nonce_staking: u8)]
+pub struct RemoveAuthorizedNameStarts<'info> {
     #[account(
         mut,
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
@@ -536,6 +650,7 @@ pub struct StakingAccount {
     pub admin_key: Pubkey,
     pub freeze_program: bool,
     pub authorized_creator: Pubkey,
+    pub authorized_name_starts: Vec<String>,
     pub active_rewards: Vec<Pubkey>,
 }
 
@@ -559,16 +674,20 @@ pub enum ErrorCode {
     NotAdmin, // 6000, 0x1770
     #[msg("Invalid mint for reward")]
     InvalidMintForReward, // 6001, 0x1771
-    #[msg("No creators found in metadata")]
-    NoCreatorsFoundInMetadata, // 6002, 0x1772
+    #[msg("No authorized creators found in metadata")]
+    NoAuthorizedCreatorsFoundInMetadata, // 6002, 0x1772
+    #[msg("No authorized name start found in metadata")]
+    NoAuthorizedNameStartFoundInMetadata, // 6003, 0x1773
     #[msg("Token transfer failed")]
-    TokenTransferFailed, // 6003, 0x1773
+    TokenTransferFailed, // 6004, 0x1774
     #[msg("Token mint failed")]
-    TokenMintFailed, // 6004, 0x1774
+    TokenMintFailed, // 6005, 0x1775
     #[msg("Not staked item")]
-    NotStakedItem, // 6005, 0x1775
+    NotStakedItem, // 6006, 0x1776
     #[msg("Not claimable item")]
-    NotClaimableItem, // 6006, 0x1776
+    NotClaimableItem, // 6007, 0x1777
+    #[msg("Can't unstake before claim all rewards")]
+    CantUnstakeBeforeClaim, // 6008, 0x1778
 }
 
 // Asserts the signer is admin
