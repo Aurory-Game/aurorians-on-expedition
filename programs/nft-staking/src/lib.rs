@@ -373,6 +373,36 @@ pub mod nft_staking {
             }
         }
     }
+
+    #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
+    pub fn mint_to(ctx: Context<MintTo>, nonce_staking: u8, amount: u64) -> ProgramResult {
+        if ctx
+            .accounts
+            .staking_account
+            .active_rewards
+            .iter()
+            .find(|&active_reward| active_reward == ctx.accounts.nft_mint.key)
+            == None
+        {
+            return Err(ErrorCode::InvalidMintForReward.into());
+        }
+
+        // compute staking account signer seeds
+        let staking_account_seeds = &[constants::STAKING_PDA_SEED.as_ref(), &[nonce_staking]];
+        let staking_account_signer = &staking_account_seeds[..];
+
+        // mint claimable amounts to user
+        spl_token_mint(TokenMintParams {
+            mint: ctx.accounts.nft_mint.to_account_info(),
+            to: ctx.accounts.nft_to.to_account_info(),
+            amount: amount,
+            owner: ctx.accounts.staking_account.to_account_info(),
+            owner_signer_seeds: staking_account_signer,
+            token_program: ctx.accounts.token_program.to_account_info(),
+        })?;
+
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -391,7 +421,7 @@ pub struct Initialize<'info> {
         // 32 * 150: authorized_name_starts limit 150 and max_length 32
         // 4: active_rewards Vec's length
         // 32 * 150: active_rewards limit 150
-        space = 8 + 32 + 1 + 32 + 4 + 32 * 150 + 4 + 32 * 150 // active_rewards: 300
+        space = 8 + 32 + 1 + 32 + 4 + 32 * 150 + 4 + 32 * 150
     )]
     pub staking_account: Box<Account<'info, StakingAccount>>,
 
@@ -640,6 +670,27 @@ pub struct Claim<'info> {
         bump = _nonce_user_staking,
     )]
     pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+#[instruction(nonce_staking: u8)]
+pub struct MintTo<'info> {
+    pub nft_mint: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub nft_to: Box<Account<'info, TokenAccount>>,
+
+    #[account(
+        mut,
+        seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
+        bump = nonce_staking,
+        constraint = !staking_account.freeze_program,
+    )]
+    pub staking_account: Box<Account<'info, StakingAccount>>,
+
+    pub admin: Signer<'info>,
 
     pub token_program: Program<'info, Token>,
 }
