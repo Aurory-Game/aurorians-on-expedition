@@ -38,6 +38,20 @@ pub struct TokenMintParams<'a: 'b, 'b> {
     pub token_program: AccountInfo<'a>,
 }
 
+///CloseAccountParams
+pub struct CloseAccountParams<'a: 'b, 'b> {
+    /// account
+    pub account: AccountInfo<'a>,
+    /// destination
+    pub destination: AccountInfo<'a>,
+    /// owner
+    pub owner: AccountInfo<'a>,
+    /// owner_signer_seeds
+    pub owner_signer_seeds: &'b [&'b [u8]],
+    /// token_program
+    pub token_program: AccountInfo<'a>,
+}
+
 pub fn spl_token_transfer(params: TokenTransferParams<'_, '_>) -> ProgramResult {
     let TokenTransferParams {
         source,
@@ -88,4 +102,28 @@ pub fn spl_token_mint(params: TokenMintParams<'_, '_>) -> ProgramResult {
     );
 
     result.map_err(|_| ErrorCode::TokenMintFailed.into())
+}
+
+pub fn spl_close_account(params: CloseAccountParams<'_, '_>) -> ProgramResult {
+    let CloseAccountParams {
+        account,
+        destination,
+        owner,
+        owner_signer_seeds,
+        token_program,
+    } = params;
+
+    let result = invoke_signed(
+        &spl_token::instruction::close_account(
+            token_program.key,
+            account.key,
+            destination.key,
+            owner.key,
+            &[],
+        )?,
+        &[account, destination, owner, token_program],
+        &[owner_signer_seeds],
+    );
+
+    result.map_err(|_| ErrorCode::CloseAccountFailed.into())
 }

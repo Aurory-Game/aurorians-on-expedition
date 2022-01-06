@@ -1,6 +1,9 @@
 pub mod utils;
 
-use crate::utils::{spl_token_mint, spl_token_transfer, TokenMintParams, TokenTransferParams};
+use crate::utils::{
+    spl_close_account, spl_token_mint, spl_token_transfer, CloseAccountParams, TokenMintParams,
+    TokenTransferParams,
+};
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount};
 use metaplex_token_metadata::state::Metadata;
@@ -28,9 +31,14 @@ pub mod nft_staking {
         ctx: Context<Initialize>,
         _nonce_staking: u8,
         authorized_creator: Pubkey,
+        authorized_name_starts: Vec<String>,
     ) -> ProgramResult {
         ctx.accounts.staking_account.admin_key = *ctx.accounts.initializer.key;
         ctx.accounts.staking_account.authorized_creator = authorized_creator;
+        ctx.accounts
+            .staking_account
+            .authorized_name_starts
+            .extend(authorized_name_starts);
 
         Ok(())
     }
@@ -190,6 +198,18 @@ pub mod nft_staking {
         _nonce_user_staking: u8,
         _winner: Pubkey,
     ) -> ProgramResult {
+        // Check if nft is one of the rewards
+        if ctx
+            .accounts
+            .staking_account
+            .active_rewards
+            .iter()
+            .find(|&active_reward| active_reward == ctx.accounts.nft_mint.key)
+            == None
+        {
+            return Err(ErrorCode::InvalidMintForReward.into());
+        }
+
         match ctx
             .accounts
             .user_staking_account
@@ -280,8 +300,8 @@ pub mod nft_staking {
 
     pub fn unstake(
         ctx: Context<Unstake>,
-        nonce_nft_vault: u8,
-        _nonce_staking: u8,
+        _nonce_nft_vault: u8,
+        nonce_staking: u8,
         _nonce_user_staking: u8,
     ) -> ProgramResult {
         if ctx.accounts.user_staking_account.claimable.len() > 0 {
@@ -296,17 +316,17 @@ pub mod nft_staking {
             .position(|nft_mint_key| nft_mint_key == ctx.accounts.nft_mint.key)
         {
             Some(index) => {
-                // compute nft vault signer seeds
-                let nft_mint_key = ctx.accounts.nft_mint.key();
-                let nft_seeds = &[nft_mint_key.as_ref(), &[nonce_nft_vault]];
-                let nft_signer = &nft_seeds[..];
+                // compute staking account signer seeds
+                let staking_account_seeds =
+                    &[constants::STAKING_PDA_SEED.as_ref(), &[nonce_staking]];
+                let staking_account_signer = &staking_account_seeds[..];
 
                 // transfer nft to user
                 spl_token_transfer(TokenTransferParams {
                     source: ctx.accounts.nft_vault.to_account_info(),
                     destination: ctx.accounts.nft_to.to_account_info(),
-                    authority: ctx.accounts.nft_vault.to_account_info(),
-                    authority_signer_seeds: nft_signer,
+                    authority: ctx.accounts.staking_account.to_account_info(),
+                    authority_signer_seeds: staking_account_signer,
                     token_program: ctx.accounts.token_program.to_account_info(),
                     amount: 1,
                 })?;
@@ -316,6 +336,15 @@ pub mod nft_staking {
                     .user_staking_account
                     .nft_mint_keys
                     .remove(index);
+
+                // Close nft_vault tokenAccount
+                spl_close_account(CloseAccountParams {
+                    account: ctx.accounts.nft_vault.to_account_info(),
+                    destination: ctx.accounts.nft_to_authority.to_account_info(),
+                    owner: ctx.accounts.staking_account.to_account_info(),
+                    owner_signer_seeds: staking_account_signer,
+                    token_program: ctx.accounts.token_program.to_account_info(),
+                })?;
 
                 return Ok(());
             }
@@ -571,7 +600,7 @@ pub struct Stake<'info> {
         init,
         payer = nft_from_authority,
         token::mint = nft_mint,
-        token::authority = nft_vault,
+        token::authority = staking_account,
         seeds = [ nft_mint.key().as_ref() ],
         bump = _nonce_nft_vault,
     )]
@@ -607,7 +636,7 @@ pub struct Stake<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(nonce_nft_vault: u8, _nonce_staking: u8, _nonce_user_staking: u8)]
+#[instruction(_nonce_nft_vault: u8, nonce_staking: u8, _nonce_user_staking: u8)]
 pub struct Unstake<'info> {
     pub nft_mint: UncheckedAccount<'info>,
 
@@ -620,15 +649,14 @@ pub struct Unstake<'info> {
     #[account(
         mut,
         seeds = [ nft_mint.key().as_ref() ],
-        bump = nonce_nft_vault,
-        close = nft_to_authority,
+        bump = _nonce_nft_vault,
     )]
     pub nft_vault: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
-        bump = _nonce_staking,
+        bump = nonce_staking,
         constraint = !staking_account.freeze_program,
     )]
     pub staking_account: Box<Account<'info, StakingAccount>>,
@@ -640,15 +668,13 @@ pub struct Unstake<'info> {
     )]
     pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
 
-    ///used by anchor for init of the token
-    pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
-    pub rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
 #[instruction(nonce_staking: u8, _nonce_user_staking: u8)]
 pub struct Claim<'info> {
+    #[account(mut)]
     pub nft_mint: UncheckedAccount<'info>,
 
     #[account(mut)]
@@ -677,6 +703,7 @@ pub struct Claim<'info> {
 #[derive(Accounts)]
 #[instruction(nonce_staking: u8)]
 pub struct MintTo<'info> {
+    #[account(mut)]
     pub nft_mint: UncheckedAccount<'info>,
 
     #[account(mut)]
@@ -739,6 +766,8 @@ pub enum ErrorCode {
     NotClaimableItem, // 6007, 0x1777
     #[msg("Can't unstake before claim all rewards")]
     CantUnstakeBeforeClaim, // 6008, 0x1778
+    #[msg("Close account failed")]
+    CloseAccountFailed, // 6009, 0x1779
 }
 
 // Asserts the signer is admin

@@ -6,6 +6,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 import { Token } from '@solana/spl-token';
+import { TokenInstructions } from '@project-serum/serum';
 import { Provider } from '@project-serum/anchor';
 
 const { Metadata, MetadataDataData, CreateMetadata, Creator } =
@@ -132,4 +133,44 @@ export async function mintToAccount(
     )
   );
   await provider.send(tx);
+}
+
+export async function createTokenAccount(
+  provider: Provider,
+  mint: PublicKey,
+  owner: PublicKey
+) {
+  const vault = Keypair.generate();
+  const tx = new Transaction();
+  tx.add(
+    ...(await createTokenAccountInstrs(provider, vault.publicKey, mint, owner))
+  );
+  await provider.send(tx, [vault]);
+  return vault.publicKey;
+}
+
+export async function createTokenAccountInstrs(
+  provider: Provider,
+  newAccountPubkey: PublicKey,
+  mint: PublicKey,
+  owner: PublicKey,
+  lamports: number | undefined = undefined
+) {
+  if (lamports === undefined) {
+    lamports = await provider.connection.getMinimumBalanceForRentExemption(165);
+  }
+  return [
+    SystemProgram.createAccount({
+      fromPubkey: provider.wallet.publicKey,
+      newAccountPubkey,
+      space: 165,
+      lamports,
+      programId: TOKEN_PROGRAM_ID,
+    }),
+    TokenInstructions.initializeAccount({
+      account: newAccountPubkey,
+      mint,
+      owner,
+    }),
+  ];
 }
