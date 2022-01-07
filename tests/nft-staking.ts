@@ -381,6 +381,31 @@ describe('nft-staking', () => {
     );
   });
 
+  it('Stake failed with mis-match mint & metadata', async () => {
+    await assert.rejects(
+      async () => {
+        await program.rpc.stake(nftVaultBump, stakingBump, userStakingBump, {
+          accounts: {
+            nftMint: mintPubkey,
+            nftMetadata: rewardMetadataPubkey[0],
+            nftFrom: userNFTTokenAccount,
+            nftFromAuthority: provider.wallet.publicKey,
+            nftVault: nftVaultPubkey,
+            stakingAccount: stakingPubkey,
+            userStakingAccount: userStakingPubkey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          },
+        });
+      },
+      {
+        message:
+          'failed to send transaction: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x177b',
+      }
+    );
+  });
+
   it('Stake success with match NFT', async () => {
     assert.equal(await getTokenBalance(userNFTTokenAccount), 1);
 

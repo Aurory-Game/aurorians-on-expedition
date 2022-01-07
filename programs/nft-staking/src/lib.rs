@@ -1,9 +1,6 @@
 pub mod utils;
 
-use crate::utils::{
-    spl_close_account, spl_token_mint, spl_token_transfer, CloseAccountParams, TokenMintParams,
-    TokenTransferParams,
-};
+use crate::utils::*;
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount};
 use metaplex_token_metadata::state::Metadata;
@@ -242,6 +239,8 @@ pub mod nft_staking {
     ) -> ProgramResult {
         let nft_metadata = &ctx.accounts.nft_metadata;
         let metadata = Metadata::from_account_info(&nft_metadata)?;
+
+        assert_metadata_valid(nft_metadata, &ctx.accounts.nft_mint.key())?;
 
         // determine authorized name start
         if ctx
@@ -768,6 +767,10 @@ pub enum ErrorCode {
     CantUnstakeBeforeClaim, // 6008, 0x1778
     #[msg("Close account failed")]
     CloseAccountFailed, // 6009, 0x1779
+    #[msg("Metadata Doesn't Exist")]
+    MetadataDoesntExist, // 6010, 0x177a
+    #[msg("Derived Key Invalid")]
+    DerivedKeyInvalid, // 6011, 0x177b
 }
 
 // Asserts the signer is admin

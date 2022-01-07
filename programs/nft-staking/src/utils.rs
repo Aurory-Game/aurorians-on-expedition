@@ -1,3 +1,5 @@
+use anchor_lang::prelude::*;
+
 use {
     crate::ErrorCode,
     anchor_lang::{
@@ -126,4 +128,33 @@ pub fn spl_close_account(params: CloseAccountParams<'_, '_>) -> ProgramResult {
     );
 
     result.map_err(|_| ErrorCode::CloseAccountFailed.into())
+}
+
+pub fn assert_metadata_valid<'info>(metadata: &UncheckedAccount, mint: &Pubkey) -> ProgramResult {
+    assert_derivation(
+        &metaplex_token_metadata::id(),
+        &metadata.to_account_info(),
+        &[
+            metaplex_token_metadata::state::PREFIX.as_bytes(),
+            metaplex_token_metadata::id().as_ref(),
+            mint.as_ref(),
+        ],
+    )?;
+    if metadata.data_is_empty() {
+        return Err(ErrorCode::MetadataDoesntExist.into());
+    }
+
+    Ok(())
+}
+
+pub fn assert_derivation(
+    program_id: &Pubkey,
+    account: &AccountInfo,
+    path: &[&[u8]],
+) -> Result<u8, ProgramError> {
+    let (key, bump) = Pubkey::find_program_address(&path, program_id);
+    if key != *account.key {
+        return Err(ErrorCode::DerivedKeyInvalid.into());
+    }
+    Ok(bump)
 }
