@@ -358,8 +358,7 @@ describe('nft-staking', () => {
         });
       },
       {
-        message:
-          'failed to send transaction: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x1772',
+        message: '6002: No authorized creators found in metadata',
       }
     );
   });
@@ -400,8 +399,7 @@ describe('nft-staking', () => {
         });
       },
       {
-        message:
-          'failed to send transaction: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x177b',
+        message: '6011: Derived Key Invalid',
       }
     );
   });
@@ -460,8 +458,7 @@ describe('nft-staking', () => {
         });
       },
       {
-        message:
-          'failed to send transaction: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x1771',
+        message: '6001: Invalid mint for reward',
       }
     );
   });
@@ -520,8 +517,7 @@ describe('nft-staking', () => {
         });
       },
       {
-        message:
-          'failed to send transaction: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x1778',
+        message: "6008: Can't unstake before claim all rewards",
       }
     );
   });
@@ -541,8 +537,7 @@ describe('nft-staking', () => {
         });
       },
       {
-        message:
-          'failed to send transaction: Transaction simulation failed: Error processing Instruction 0: custom program error: 0x1777',
+        message: '6007: Not claimable item',
       }
     );
   });
