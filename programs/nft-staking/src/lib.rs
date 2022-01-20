@@ -331,10 +331,6 @@ pub mod nft_staking {
             index += 4;
         }
 
-        // set user staking info
-        ctx.accounts.user_staking_account.index = ctx.accounts.user_staking_counter_account.counter;
-        ctx.accounts.user_staking_account.wallet = *ctx.accounts.nft_from_authority.key;
-
         Ok(())
     }
 
@@ -357,7 +353,9 @@ pub mod nft_staking {
             return Err(ErrorCode::InvalidStakingPeriod.into());
         }
 
-        // determine
+        // set user staking info
+        ctx.accounts.user_staking_account.index = ctx.accounts.user_staking_counter_account.counter;
+        ctx.accounts.user_staking_account.wallet = *ctx.accounts.nft_from_authority.key;
         ctx.accounts.user_staking_account.staking_at = Clock::get()?.unix_timestamp as u64;
         ctx.accounts.user_staking_account.staking_period = staking_period;
         ctx.accounts.user_staking_counter_account.counter += 1;
