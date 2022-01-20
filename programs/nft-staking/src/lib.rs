@@ -26,6 +26,7 @@ pub mod nft_staking {
     pub fn initialize(
         ctx: Context<Initialize>,
         _nonce_staking: u8,
+        metaplex_program_id: Pubkey,
         authorized_creator: Pubkey,
         authorized_name_starts: Vec<String>,
         minimum_staking_period: u64,
@@ -35,6 +36,7 @@ pub mod nft_staking {
             return Err(ErrorCode::InvalidStakingPeriod.into());
         }
 
+        ctx.accounts.staking_account.metaplex_program_id = metaplex_program_id;
         ctx.accounts.staking_account.admin_key = *ctx.accounts.initializer.key;
         ctx.accounts.staking_account.authorized_creator = authorized_creator;
         ctx.accounts
@@ -255,14 +257,12 @@ pub mod nft_staking {
         ctx: Context<'a, 'b, 'c, 'info, Stake<'info>>,
         _nonce_nft_vault: Vec<u8>,
         _nonce_staking: u8,
+        _nonce_user_staking_counter: u8,
         _nonce_user_staking: u8,
-        staking_period: u64,
     ) -> ProgramResult {
-        // determine the staking period
-        if !(staking_period >= ctx.accounts.staking_account.minimum_staking_period
-            && staking_period <= ctx.accounts.staking_account.maximum_staking_period)
-        {
-            return Err(ErrorCode::InvalidStakingPeriod.into());
+        // determine if stake is already locked
+        if ctx.accounts.user_staking_account.staking_period > 0 {
+            return Err(ErrorCode::StakingLocked.into());
         }
 
         let remaining_accounts = ctx.remaining_accounts;
@@ -290,6 +290,7 @@ pub mod nft_staking {
                 nft_metadata,
                 nft_mint.key,
                 ctx.accounts.staking_account.clone(),
+                &ctx.accounts.staking_account.metaplex_program_id,
             )?;
 
             // compute nft vault account signer seeds
@@ -329,9 +330,35 @@ pub mod nft_staking {
         }
 
         // set user staking info
+        ctx.accounts.user_staking_account.index = ctx.accounts.user_staking_counter_account.counter;
         ctx.accounts.user_staking_account.wallet = *ctx.accounts.nft_from_authority.key;
+
+        Ok(())
+    }
+
+    pub fn lock_stake(
+        ctx: Context<LockStake>,
+        _nonce_staking: u8,
+        _nonce_user_staking_counter: u8,
+        _nonce_user_staking: u8,
+        staking_period: u64,
+    ) -> ProgramResult {
+        // determine if stake is already locked
+        if ctx.accounts.user_staking_account.staking_period > 0 {
+            return Err(ErrorCode::StakingLocked.into());
+        }
+
+        // determine the staking period
+        if !(staking_period >= ctx.accounts.staking_account.minimum_staking_period
+            && staking_period <= ctx.accounts.staking_account.maximum_staking_period)
+        {
+            return Err(ErrorCode::InvalidStakingPeriod.into());
+        }
+
+        // determine
         ctx.accounts.user_staking_account.staking_at = Clock::get()?.unix_timestamp as u64;
         ctx.accounts.user_staking_account.staking_period = staking_period;
+        ctx.accounts.user_staking_counter_account.counter += 1;
 
         Ok(())
     }
@@ -339,6 +366,7 @@ pub mod nft_staking {
     pub fn unstake<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, Unstake<'info>>,
         nonce_staking: u8,
+        _user_staking_index: u32,
         _nonce_user_staking: u8,
     ) -> ProgramResult {
         // determine if claimable is empty
@@ -346,11 +374,16 @@ pub mod nft_staking {
             return Err(ErrorCode::CantUnstakeBeforeClaim.into());
         }
 
+        // determine if stake is already locked
+        if ctx.accounts.user_staking_account.staking_period == 0 {
+            return Err(ErrorCode::StakingNotLocked.into());
+        }
+
         // determine the staking period
         if (Clock::get()?.unix_timestamp as u64 - ctx.accounts.user_staking_account.staking_at)
             < ctx.accounts.user_staking_account.staking_period
         {
-            return Err(ErrorCode::Stakinglocked.into());
+            return Err(ErrorCode::StakingLocked.into());
         }
 
         let remaining_accounts = ctx.remaining_accounts;
@@ -376,29 +409,46 @@ pub mod nft_staking {
             let nft_to = Account::<'_, TokenAccount>::try_from(&remaining_accounts[index])?;
             let nft_vault = Account::<'_, TokenAccount>::try_from(&remaining_accounts[index + 1])?;
 
-            // transfer nft to user
-            spl_token_transfer(TokenTransferParams {
-                source: nft_vault.to_account_info(),
-                destination: nft_to.to_account_info(),
-                authority: authority.to_account_info(),
-                authority_signer_seeds: staking_account_signer,
-                token_program: token_program.to_account_info(),
-                amount: 1,
-            })?;
+            match ctx
+                .accounts
+                .user_staking_account
+                .nft_mint_keys
+                .iter()
+                .position(|&mint_key| mint_key == nft_vault.mint)
+            {
+                Some(index) => {
+                    // remove staked nft key
+                    ctx.accounts
+                        .user_staking_account
+                        .nft_mint_keys
+                        .remove(index);
 
-            // Close nft_vault tokenAccount
-            spl_close_account(CloseAccountParams {
-                account: nft_vault.to_account_info(),
-                destination: nft_to_authority.to_account_info(),
-                owner: authority.to_account_info(),
-                owner_signer_seeds: staking_account_signer,
-                token_program: token_program.to_account_info(),
-            })?;
+                    // transfer nft to user
+                    spl_token_transfer(TokenTransferParams {
+                        source: nft_vault.to_account_info(),
+                        destination: nft_to.to_account_info(),
+                        authority: authority.to_account_info(),
+                        authority_signer_seeds: staking_account_signer,
+                        token_program: token_program.to_account_info(),
+                        amount: 1,
+                    })?;
+
+                    // Close nft_vault tokenAccount
+                    spl_close_account(CloseAccountParams {
+                        account: nft_vault.to_account_info(),
+                        destination: nft_to_authority.to_account_info(),
+                        owner: authority.to_account_info(),
+                        owner_signer_seeds: staking_account_signer,
+                        token_program: token_program.to_account_info(),
+                    })?;
+                }
+                None => {
+                    return Err(ErrorCode::NotStakedItem.into());
+                }
+            }
 
             index += 2;
         }
-
-        ctx.accounts.user_staking_account.nft_mint_keys.clear();
 
         Ok(())
     }
@@ -492,6 +542,7 @@ pub struct Initialize<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
         // 8: account's signature on the anchor
+        // 32: metaplex_program_id
         // 32: admin_key
         // 1: freeze_program
         // 32: authorized_creator
@@ -499,7 +550,7 @@ pub struct Initialize<'info> {
         // 32 * 150: authorized_name_starts limit 150 and max_length 32
         // 4: active_rewards Vec's length
         // 32 * 150: active_rewards limit 150
-        space = 8 + 32 + 1 + 32 + 4 + 32 * 150 + 4 + 32 * 150
+        space = 8 + 32 + 32 + 1 + 32 + 4 + 32 * 150 + 4 + 32 * 150
     )]
     pub staking_account: Box<Account<'info, StakingAccount>>,
 
@@ -646,7 +697,7 @@ pub struct AddWinner<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction[_nonce_staking: u8, _nonce_user_staking: u8]]
+#[instruction[_nonce_staking: u8, _nonce_user_staking_counter: u8, _nonce_user_staking: u8]]
 pub struct Stake<'info> {
     #[account(mut)]
     pub nft_from_authority: Signer<'info>,
@@ -660,11 +711,20 @@ pub struct Stake<'info> {
     pub staking_account: Box<Account<'info, StakingAccount>>,
 
     #[account(
-        init,
+        init_if_needed,
         payer = nft_from_authority,
         seeds = [ nft_from_authority.key().as_ref() ],
+        bump = _nonce_user_staking_counter,
+    )]
+    pub user_staking_counter_account: Box<Account<'info, UserStakingCounterAccount>>,
+
+    #[account(
+        init,
+        payer = nft_from_authority,
+        seeds = [ user_staking_counter_account.counter.to_string().as_ref(), nft_from_authority.key().as_ref() ],
         bump = _nonce_user_staking,
         // 8: account's signature on the anchor
+        // 4: index
         // 32: wallet
         // 4: nft_mint_keys Vec's length
         // 32 * 150: nft_mint_keys limit 150
@@ -672,7 +732,7 @@ pub struct Stake<'info> {
         // (32 + 2) * 150: claimable limit 150
         // 8: staking_at
         // 8: staking_period
-        space = 8 + 32 + 4 + 32 * 150 + 4 + (32 + 2) * 150 + 8 + 8,
+        space = 8 + 4 + 32 + 4 + 32 * 150 + 4 + (32 + 2) * 150 + 8 + 8,
     )]
     pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
 
@@ -683,7 +743,36 @@ pub struct Stake<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(nonce_staking: u8, _nonce_user_staking: u8)]
+#[instruction(_nonce_staking: u8, _nonce_user_staking_counter: u8, _nonce_user_staking: u8)]
+pub struct LockStake<'info> {
+    #[account(mut)]
+    pub nft_from_authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
+        bump = _nonce_staking,
+        constraint = !staking_account.freeze_program,
+    )]
+    pub staking_account: Box<Account<'info, StakingAccount>>,
+
+    #[account(
+        mut,
+        seeds = [ nft_from_authority.key().as_ref() ],
+        bump = _nonce_user_staking_counter,
+    )]
+    pub user_staking_counter_account: Box<Account<'info, UserStakingCounterAccount>>,
+
+    #[account(
+        mut,
+        seeds = [ user_staking_counter_account.counter.to_string().as_ref(), nft_from_authority.key().as_ref() ],
+        bump = _nonce_user_staking,
+    )]
+    pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
+}
+
+#[derive(Accounts)]
+#[instruction(nonce_staking: u8, _user_staking_index: u32, _nonce_user_staking: u8)]
 pub struct Unstake<'info> {
     #[account(mut)]
     pub nft_to_authority: Signer<'info>,
@@ -698,7 +787,7 @@ pub struct Unstake<'info> {
 
     #[account(
         mut,
-        seeds = [ nft_to_authority.key().as_ref() ],
+        seeds = [ _user_staking_index.to_string().as_ref(), nft_to_authority.key().as_ref() ],
         bump = _nonce_user_staking,
     )]
     pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
@@ -760,6 +849,7 @@ pub struct MintTo<'info> {
 #[account]
 #[derive(Default)]
 pub struct StakingAccount {
+    pub metaplex_program_id: Pubkey,
     pub admin_key: Pubkey,
     pub freeze_program: bool,
     pub authorized_creator: Pubkey,
@@ -767,6 +857,12 @@ pub struct StakingAccount {
     pub minimum_staking_period: u64,
     pub maximum_staking_period: u64,
     pub active_rewards: Vec<Pubkey>,
+}
+
+#[account]
+#[derive(Default)]
+pub struct UserStakingCounterAccount {
+    pub counter: u32,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Copy, Clone, Default)]
@@ -778,6 +874,7 @@ pub struct ClaimableToken {
 #[account]
 #[derive(Default)]
 pub struct UserStakingAccount {
+    pub index: u32,
     pub wallet: Pubkey,
     pub nft_mint_keys: Vec<Pubkey>,
     pub claimable: Vec<ClaimableToken>,
@@ -820,7 +917,9 @@ pub enum ErrorCode {
     #[msg("Invalid staking period")]
     InvalidStakingPeriod, // 6015, 0x177f
     #[msg("Staking locked")]
-    Stakinglocked, // 6016, 0x1780
+    StakingLocked, // 6016, 0x1780
+    #[msg("Staking not locked")]
+    StakingNotLocked, // 6017, 0x1781
 }
 
 // Asserts the signer is admin

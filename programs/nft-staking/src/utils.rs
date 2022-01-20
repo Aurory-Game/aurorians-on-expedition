@@ -215,7 +215,11 @@ pub fn assert_metadata_valid<'info>(
     nft_metadata: &AccountInfo,
     mint: &Pubkey,
     staking_account: Box<Account<StakingAccount>>,
+    program_id: &Pubkey,
 ) -> ProgramResult {
+    // determine metaplex program id
+    assert_owned_by(nft_metadata, program_id)?;
+
     // determine metadata mint
     assert_derivation(
         &metaplex_token_metadata::id(),
@@ -272,4 +276,12 @@ pub fn assert_derivation(program_id: &Pubkey, account: &AccountInfo, path: &[&[u
         return Err(ErrorCode::DerivedKeyInvalid.into());
     }
     Ok(bump)
+}
+
+pub fn assert_owned_by(account: &AccountInfo, owner: &Pubkey) -> ProgramResult {
+    if account.owner != owner {
+        Err(MetadataError::IncorrectOwner.into())
+    } else {
+        Ok(())
+    }
 }
