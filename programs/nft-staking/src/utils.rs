@@ -280,7 +280,7 @@ pub fn assert_derivation(program_id: &Pubkey, account: &AccountInfo, path: &[&[u
 
 pub fn assert_owned_by(account: &AccountInfo, owner: &Pubkey) -> ProgramResult {
     if account.owner != owner {
-        Err(MetadataError::IncorrectOwner.into())
+        Err(ErrorCode::IncorrectOwner.into())
     } else {
         Ok(())
     }

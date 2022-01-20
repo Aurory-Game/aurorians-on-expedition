@@ -32,7 +32,7 @@ pub mod nft_staking {
         minimum_staking_period: u64,
         maximum_staking_period: u64,
     ) -> ProgramResult {
-        if !(minimum_staking_period < maximum_staking_period) {
+        if !(minimum_staking_period < maximum_staking_period && minimum_staking_period > 0) {
             return Err(ErrorCode::InvalidStakingPeriod.into());
         }
 
@@ -85,7 +85,9 @@ pub mod nft_staking {
         new_minimum_staking_period: u64,
         new_maximum_staking_period: u64,
     ) -> ProgramResult {
-        if !(new_minimum_staking_period < new_maximum_staking_period) {
+        if !(new_minimum_staking_period < new_maximum_staking_period
+            && new_minimum_staking_period > 0)
+        {
             return Err(ErrorCode::InvalidStakingPeriod.into());
         }
 
@@ -920,6 +922,8 @@ pub enum ErrorCode {
     StakingLocked, // 6016, 0x1780
     #[msg("Staking not locked")]
     StakingNotLocked, // 6017, 0x1781
+    #[msg("Incorrect owner")]
+    IncorrectOwner, // 6018, 0x1782
 }
 
 // Asserts the signer is admin
