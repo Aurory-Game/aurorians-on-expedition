@@ -216,8 +216,9 @@ pub mod nft_staking {
     pub fn add_winner(
         ctx: Context<AddWinner>,
         _nonce_staking: u8,
-        _nonce_user_staking: u8,
+        _winner_staking_index: u32,
         _winner: Pubkey,
+        _nonce_user_staking: u8,
     ) -> ProgramResult {
         // Check if nft is one of the rewards
         if ctx
@@ -453,7 +454,12 @@ pub mod nft_staking {
         Ok(())
     }
 
-    pub fn claim(ctx: Context<Claim>, nonce_staking: u8, _nonce_user_staking: u8) -> ProgramResult {
+    pub fn claim(
+        ctx: Context<Claim>,
+        nonce_staking: u8,
+        _user_staking_index: u32,
+        _nonce_user_staking: u8,
+    ) -> ProgramResult {
         match ctx
             .accounts
             .user_staking_account
@@ -675,7 +681,7 @@ pub struct RemoveReward<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(_nonce_staking: u8, _nonce_user_staking: u8, _winner: Pubkey)]
+#[instruction(_nonce_staking: u8, _winner_staking_index: u32, _winner: Pubkey, _nonce_user_staking: u8)]
 pub struct AddWinner<'info> {
     pub nft_mint: UncheckedAccount<'info>,
 
@@ -688,7 +694,7 @@ pub struct AddWinner<'info> {
 
     #[account(
         mut,
-        seeds = [ _winner.as_ref() ],
+        seeds = [ _winner_staking_index.to_string().as_ref(), _winner.as_ref() ],
         bump = _nonce_user_staking,
     )]
     pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
@@ -719,7 +725,7 @@ pub struct Stake<'info> {
     pub user_staking_counter_account: Box<Account<'info, UserStakingCounterAccount>>,
 
     #[account(
-        init,
+        init_if_needed,
         payer = nft_from_authority,
         seeds = [ user_staking_counter_account.counter.to_string().as_ref(), nft_from_authority.key().as_ref() ],
         bump = _nonce_user_staking,
@@ -796,7 +802,7 @@ pub struct Unstake<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(nonce_staking: u8, _nonce_user_staking: u8)]
+#[instruction(nonce_staking: u8, _user_staking_index: u32, _nonce_user_staking: u8)]
 pub struct Claim<'info> {
     #[account(mut)]
     pub nft_mint: UncheckedAccount<'info>,
@@ -816,7 +822,7 @@ pub struct Claim<'info> {
 
     #[account(
         mut,
-        seeds = [ nft_to_authority.key().as_ref() ],
+        seeds = [ _user_staking_index.to_string().as_ref(), nft_to_authority.key().as_ref() ],
         bump = _nonce_user_staking,
     )]
     pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
