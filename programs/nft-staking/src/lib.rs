@@ -11,12 +11,14 @@ declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 #[cfg(not(feature = "local-testing"))]
 pub mod constants {
     pub const AURY_TOKEN_MINT_PUBKEY: &str = "AURYydfxJib1ZkTir1Jn1J9ECYUtjb6rKQVmtYaixWPP";
+    pub const METAPLEX_PROGRAM_ID: &[u8] = b"metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
     pub const STAKING_PDA_SEED: &[u8] = b"nft_staking";
 }
 
 #[cfg(feature = "local-testing")]
 pub mod constants {
     pub const AURY_TOKEN_MINT_PUBKEY: &str = "teST1ieLrLdr4MJPZ7i8mgSCLQ7rTrPRjNnyFdHFaz9";
+    pub const METAPLEX_PROGRAM_ID: &[u8] = b"metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
     pub const STAKING_PDA_SEED: &[u8] = b"staking";
 }
 
@@ -28,7 +30,6 @@ pub mod nft_staking {
         ctx: Context<Initialize>,
         _nonce_staking: u8,
         _nonce_aury_vault: u8,
-        metaplex_program_id: Pubkey,
         authorized_creator: Pubkey,
         authorized_name_starts: Vec<String>,
         minimum_staking_period: u64,
@@ -38,7 +39,6 @@ pub mod nft_staking {
             return Err(ErrorCode::InvalidStakingPeriod.into());
         }
 
-        ctx.accounts.staking_account.metaplex_program_id = metaplex_program_id;
         ctx.accounts.staking_account.admin_key = *ctx.accounts.initializer.key;
         ctx.accounts.staking_account.authorized_creator = authorized_creator;
         ctx.accounts
@@ -331,7 +331,7 @@ pub mod nft_staking {
                 nft_metadata,
                 nft_mint.key,
                 ctx.accounts.staking_account.clone(),
-                &ctx.accounts.staking_account.metaplex_program_id,
+                &Pubkey::new(constants::METAPLEX_PROGRAM_ID),
             )?;
 
             // init if needed nft vault
@@ -625,7 +625,6 @@ pub struct Initialize<'info> {
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
         // 8: account's signature on the anchor
-        // 32: metaplex_program_id
         // 32: admin_key
         // 1: freeze_program
         // 32: authorized_creator
@@ -633,7 +632,7 @@ pub struct Initialize<'info> {
         // 32 * 150: authorized_name_starts limit 150 and max_length 32
         // 4: active_rewards Vec's length
         // 32 * 150: active_rewards limit 150
-        space = 8 + 32 + 32 + 1 + 32 + 4 + 32 * 150 + 4 + 32 * 150
+        space = 8 + 32 + 1 + 32 + 4 + 32 * 150 + 4 + 32 * 150
     )]
     pub staking_account: Box<Account<'info, StakingAccount>>,
 
@@ -1016,7 +1015,6 @@ pub struct MintTo<'info> {
 #[account]
 #[derive(Default)]
 pub struct StakingAccount {
-    pub metaplex_program_id: Pubkey,
     pub admin_key: Pubkey,
     pub freeze_program: bool,
     pub authorized_creator: Pubkey,
