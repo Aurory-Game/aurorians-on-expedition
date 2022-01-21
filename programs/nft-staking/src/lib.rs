@@ -264,8 +264,8 @@ pub mod nft_staking {
     }
 
     #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
-    pub fn add_aury_reward(
-        ctx: Context<AddAuryReward>,
+    pub fn add_aury_winner(
+        ctx: Context<AddAuryWinner>,
         _nonce_staking: u8,
         _nonce_aury_vault: u8,
         _winner_staking_index: u32,
@@ -797,7 +797,7 @@ pub struct AddWinner<'info> {
 
 #[derive(Accounts)]
 #[instruction(_nonce_staking: u8, _nonce_aury_vault: u8, _winner_staking_index: u32, _winner: Pubkey, _nonce_user_staking: u8)]
-pub struct AddAuryReward<'info> {
+pub struct AddAuryWinner<'info> {
     #[account(
         mut,
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
