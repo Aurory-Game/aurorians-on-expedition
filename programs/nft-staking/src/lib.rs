@@ -2,20 +2,21 @@ pub mod utils;
 
 use crate::utils::*;
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Token, TokenAccount};
-use spl_token::instruction::AuthorityType;
+use anchor_spl::token::{Mint, Token, TokenAccount};
+use spl_token::{instruction::AuthorityType, state::AccountState};
+
 
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 
 #[cfg(not(feature = "local-testing"))]
 pub mod constants {
-    pub const DAO_TOKEN_MINT_PUBKEY: &str = "AURYydfxJib1ZkTir1Jn1J9ECYUtjb6rKQVmtYaixWPP";
+    pub const AURY_TOKEN_MINT_PUBKEY: &str = "AURYydfxJib1ZkTir1Jn1J9ECYUtjb6rKQVmtYaixWPP";
     pub const STAKING_PDA_SEED: &[u8] = b"nft_staking";
 }
 
 #[cfg(feature = "local-testing")]
 pub mod constants {
-    pub const DAO_TOKEN_MINT_PUBKEY: &str = "teST1ieLrLdr4MJPZ7i8mgSCLQ7rTrPRjNnyFdHFaz9";
+    pub const AURY_TOKEN_MINT_PUBKEY: &str = "teST1ieLrLdr4MJPZ7i8mgSCLQ7rTrPRjNnyFdHFaz9";
     pub const STAKING_PDA_SEED: &[u8] = b"staking";
 }
 
@@ -26,6 +27,7 @@ pub mod nft_staking {
     pub fn initialize(
         ctx: Context<Initialize>,
         _nonce_staking: u8,
+        _nonce_aury_vault: u8,
         metaplex_program_id: Pubkey,
         authorized_creator: Pubkey,
         authorized_name_starts: Vec<String>,
@@ -220,6 +222,11 @@ pub mod nft_staking {
         _winner: Pubkey,
         _nonce_user_staking: u8,
     ) -> ProgramResult {
+        // determine if stake is locked
+        if ctx.accounts.user_staking_account.staking_period == 0 {
+            return Err(ErrorCode::StakingNotLocked.into());
+        }
+
         // Check if nft is one of the rewards
         if ctx
             .accounts
@@ -256,6 +263,37 @@ pub mod nft_staking {
         Ok(())
     }
 
+    #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
+    pub fn add_aury_reward(
+        ctx: Context<AddAuryReward>,
+        _nonce_staking: u8,
+        _nonce_aury_vault: u8,
+        _winner_staking_index: u32,
+        _winner: Pubkey,
+        _nonce_user_staking: u8,
+        aury_amount: u64,
+    ) -> ProgramResult {
+        // determine if stake is locked
+        if ctx.accounts.user_staking_account.staking_period == 0 {
+            return Err(ErrorCode::StakingNotLocked.into());
+        }
+
+        // transfer aury to the vault
+        spl_token_transfer(TokenTransferParams { 
+            source: ctx.accounts.aury_from.to_account_info(), 
+            destination: ctx.accounts.aury_vault.to_account_info(), 
+            amount: aury_amount, 
+            authority: ctx.accounts.admin.to_account_info(), 
+            authority_signer_seeds: &[], 
+            token_program: ctx.accounts.token_program.to_account_info() 
+        })?;
+
+        // update user staking info
+        ctx.accounts.user_staking_account.claimable_aury_amount += aury_amount;
+
+        Ok(())
+    }
+
     pub fn stake<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, Stake<'info>>,
         _nonce_nft_vault: Vec<u8>,
@@ -263,7 +301,7 @@ pub mod nft_staking {
         _nonce_user_staking_counter: u8,
         _nonce_user_staking: u8,
     ) -> ProgramResult {
-        // determine if stake is already locked
+        // determine if stake is locked
         if ctx.accounts.user_staking_account.staking_period > 0 {
             return Err(ErrorCode::StakingLocked.into());
         }
@@ -296,22 +334,32 @@ pub mod nft_staking {
                 &ctx.accounts.staking_account.metaplex_program_id,
             )?;
 
-            // compute nft vault account signer seeds
-            let nft_vault_account_seeds = &[
-                nft_from_authority.key.as_ref(),
-                nft_mint.key.as_ref(),
-                &[_nonce_nft_vault[index / 4]],
-            ];
-            let nft_vault_account_signer = &nft_vault_account_seeds[..];
+            // init if needed nft vault
+            if nft_vault.owner == &token_program.key() {
+                let nft_vault_token_account = Account::<'_, TokenAccount>::try_from(&nft_vault)?;
 
-            // initialize nft vault account
-            spl_init_token_account(InitializeTokenAccountParams {
-                account: nft_vault.clone(),
-                account_signer_seeds: nft_vault_account_signer,
-                mint: nft_mint.clone(),
-                owner: owner.to_account_info(),
-                token_program: token_program.to_account_info(),
-            })?;
+                // validate the existing nft vault
+                if nft_vault_token_account.mint != *nft_mint.key || nft_vault_token_account.owner != owner.key() || nft_vault_token_account.state != AccountState::Initialized {
+                    return Err(ErrorCode::InvalidAccounts.into());
+                }
+            } else {
+                // compute nft vault account signer seeds
+                let nft_vault_account_seeds = &[
+                    nft_from_authority.key.as_ref(),
+                    nft_mint.key.as_ref(),
+                    &[_nonce_nft_vault[index / 4]],
+                ];
+                let nft_vault_account_signer = &nft_vault_account_seeds[..];
+
+                // initialize nft vault account
+                spl_init_token_account(InitializeTokenAccountParams {
+                    account: nft_vault.clone(),
+                    account_signer_seeds: nft_vault_account_signer,
+                    mint: nft_mint.clone(),
+                    owner: owner.to_account_info(),
+                    token_program: token_program.to_account_info(),
+                })?;
+            }
 
             // transfer nft to nft vault
             spl_token_transfer(TokenTransferParams {
@@ -342,7 +390,7 @@ pub mod nft_staking {
         _nonce_user_staking: u8,
         staking_period: u64,
     ) -> ProgramResult {
-        // determine if stake is already locked
+        // determine if stake is locked
         if ctx.accounts.user_staking_account.staking_period > 0 {
             return Err(ErrorCode::StakingLocked.into());
         }
@@ -371,11 +419,11 @@ pub mod nft_staking {
         _nonce_user_staking: u8,
     ) -> ProgramResult {
         // determine if claimable is empty
-        if ctx.accounts.user_staking_account.claimable.len() > 0 {
+        if ctx.accounts.user_staking_account.claimable.len() > 0 || ctx.accounts.user_staking_account.claimable_aury_amount > 0 {
             return Err(ErrorCode::CantUnstakeBeforeClaim.into());
         }
 
-        // determine if stake is already locked
+        // determine if stake is locked
         if ctx.accounts.user_staking_account.staking_period == 0 {
             return Err(ErrorCode::StakingNotLocked.into());
         }
@@ -508,6 +556,35 @@ pub mod nft_staking {
         }
     }
 
+    pub fn claim_aury_reward(
+        ctx: Context<ClaimAuryReward>,
+        nonce_aury_vault: u8,
+        _user_staking_index: u32,
+        _nonce_user_staking: u8,
+    ) -> ProgramResult {
+        if ctx.accounts.user_staking_account.claimable_aury_amount > 0 {
+            // compute aury vault account signer seeds
+            let aury_mint_key = ctx.accounts.aury_mint.key();
+            let aury_vault_account_seeds =
+                &[aury_mint_key.as_ref(), &[nonce_aury_vault]];
+            let aury_vault_account_signer = &aury_vault_account_seeds[..];
+
+            // transfer aury from vault
+            spl_token_transfer(TokenTransferParams { 
+                source: ctx.accounts.aury_vault.to_account_info(),
+                destination: ctx.accounts.aury_to.to_account_info(), 
+                amount: ctx.accounts.user_staking_account.claimable_aury_amount, 
+                authority: ctx.accounts.aury_vault.to_account_info(), 
+                authority_signer_seeds: aury_vault_account_signer, 
+                token_program: ctx.accounts.token_program.to_account_info() 
+            })?;
+
+            ctx.accounts.user_staking_account.claimable_aury_amount = 0;
+        }
+
+        Ok(())
+    }
+
     #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
     pub fn mint_to(ctx: Context<MintTo>, nonce_staking: u8, amount: u64) -> ProgramResult {
         if ctx
@@ -540,7 +617,7 @@ pub mod nft_staking {
 }
 
 #[derive(Accounts)]
-#[instruction(_nonce_staking: u8)]
+#[instruction(_nonce_staking: u8, _nonce_aury_vault: u8)]
 pub struct Initialize<'info> {
     #[account(
         init,
@@ -559,6 +636,22 @@ pub struct Initialize<'info> {
         space = 8 + 32 + 32 + 1 + 32 + 4 + 32 * 150 + 4 + 32 * 150
     )]
     pub staking_account: Box<Account<'info, StakingAccount>>,
+
+    #[account(
+        address = constants::AURY_TOKEN_MINT_PUBKEY.parse::<Pubkey>().unwrap(),
+    )]
+    pub aury_mint: Box<Account<'info, Mint>>,
+
+    #[account(
+        init,
+        payer = initializer,
+        token::mint = aury_mint,
+        token::authority = aury_vault,
+        seeds = [ constants::AURY_TOKEN_MINT_PUBKEY.parse::<Pubkey>().unwrap().as_ref() ],
+        bump = _nonce_aury_vault,
+    )]
+    ///the not-yet-created, derived token vault pubkey
+    pub aury_vault: Box<Account<'info, TokenAccount>>,
 
     #[account(mut)]
     pub initializer: Signer<'info>,
@@ -703,6 +796,43 @@ pub struct AddWinner<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(_nonce_staking: u8, _nonce_aury_vault: u8, _winner_staking_index: u32, _winner: Pubkey, _nonce_user_staking: u8)]
+pub struct AddAuryReward<'info> {
+    #[account(
+        mut,
+        seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
+        bump = _nonce_staking,
+    )]
+    pub staking_account: Box<Account<'info, StakingAccount>>,
+
+    #[account(
+        address = constants::AURY_TOKEN_MINT_PUBKEY.parse::<Pubkey>().unwrap(),
+    )]
+    pub aury_mint: Box<Account<'info, Mint>>,
+
+    #[account(
+        mut,
+        seeds = [ aury_mint.key().as_ref() ],
+        bump = _nonce_aury_vault,
+    )]
+    pub aury_vault: Box<Account<'info, TokenAccount>>,
+
+    #[account(
+        mut,
+        seeds = [ _winner_staking_index.to_string().as_ref(), _winner.as_ref() ],
+        bump = _nonce_user_staking,
+    )]
+    pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
+
+    #[account(mut)]
+    pub aury_from: Box<Account<'info, TokenAccount>>,
+
+    pub admin: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
 #[instruction[_nonce_staking: u8, _nonce_user_staking_counter: u8, _nonce_user_staking: u8]]
 pub struct Stake<'info> {
     #[account(mut)]
@@ -738,7 +868,8 @@ pub struct Stake<'info> {
         // (32 + 2) * 150: claimable limit 150
         // 8: staking_at
         // 8: staking_period
-        space = 8 + 4 + 32 + 4 + 32 * 150 + 4 + (32 + 2) * 150 + 8 + 8,
+        // 8: claimable aury amount
+        space = 8 + 4 + 32 + 4 + 32 * 150 + 4 + (32 + 2) * 150 + 8 + 8 + 8, 
     )]
     pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
 
@@ -831,6 +962,36 @@ pub struct Claim<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(nonce_aury_vault: u8, _user_staking_index: u32, _nonce_user_staking: u8)]
+pub struct ClaimAuryReward<'info> {
+    #[account(
+        address = constants::AURY_TOKEN_MINT_PUBKEY.parse::<Pubkey>().unwrap(),
+    )]
+    pub aury_mint: Box<Account<'info, Mint>>,
+
+    #[account(
+        mut,
+        seeds = [ aury_mint.key().as_ref() ],
+        bump = nonce_aury_vault,
+    )]
+    pub aury_vault: Box<Account<'info, TokenAccount>>,
+
+    #[account(mut)]
+    pub aury_to: Box<Account<'info, TokenAccount>>,
+
+    pub aury_to_authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [ _user_staking_index.to_string().as_ref(), aury_to_authority.key().as_ref() ],
+        bump = _nonce_user_staking,
+    )]
+    pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
 #[instruction(nonce_staking: u8)]
 pub struct MintTo<'info> {
     #[account(mut)]
@@ -886,6 +1047,7 @@ pub struct UserStakingAccount {
     pub claimable: Vec<ClaimableToken>,
     pub staking_at: u64,
     pub staking_period: u64,
+    pub claimable_aury_amount: u64,
 }
 
 #[error]
