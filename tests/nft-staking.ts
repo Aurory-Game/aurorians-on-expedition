@@ -1,15 +1,20 @@
 import * as anchor from '@project-serum/anchor';
 import { TOKEN_PROGRAM_ID, Token } from '@solana/spl-token';
 import assert from 'assert';
+import { expect } from 'chai';
 import { nft_data, nft_json_url } from './data';
 import {
   createMint,
   setMintAuthority,
   mintToAccount,
   createTokenAccount,
+  createTokenMint,
 } from './utils';
 import fs from 'fs';
+import dayjs from 'dayjs';
 import { PublicKey } from '@solana/web3.js';
+import { Program } from '@project-serum/anchor';
+import { NftStaking } from '../target/types/nft_staking';
 
 // manually loading the idl as accessing anchor.workspace
 // trigers an error because metadata and vault program don't have idls
@@ -21,86 +26,205 @@ const envProvider = anchor.Provider.env();
 
 let provider = envProvider;
 
-let program;
+let program: Program<NftStaking>;
 function setProvider(p: anchor.Provider) {
   provider = p;
   anchor.setProvider(p);
-  program = new anchor.Program(idl, idl.metadata.address, p);
+  program = new anchor.Program(
+    idl,
+    idl.metadata.address,
+    p
+  ) as Program<NftStaking>;
 }
 setProvider(provider);
 
 describe('nft-staking', () => {
   //the program's account for stored initializer key
   let stakingPubkey: PublicKey;
-  let stakingBump;
-  let nftVaultPubkey: PublicKey;
-  let nftVaultBump;
+  let stakingBump: number;
+
+  let auryToken: Token;
+  let auryMintPubkey: PublicKey;
+  let auryVaultPubkey: PublicKey;
+  let auryVaultBump: number;
+
+  let nftVaultPubkey: PublicKey[] = [];
+  let nftVaultBump: number[] = [];
+
+  let minimumStakingPeriod = new anchor.BN(1);
+  let maximumStakingPeriod = new anchor.BN(20);
 
   //winner
   let winner = provider.wallet.publicKey;
+
+  let userStakingCounterPubkey: PublicKey;
+  let userStakingCounterBump: number;
+
   let userStakingPubkey: PublicKey;
-  let userStakingBump;
-  let userNFTTokenAccount: PublicKey;
+  let userStakingBump: number;
+  let userStakingIndex = 0;
+  let userStakingPeriod = new anchor.BN(2);
+
+  let userAuryTokenAccount: PublicKey;
+  let userNFTTokenAccount: PublicKey[] = [];
   let userRewardTokenAccount: PublicKey[] = [];
+  let userAuryRewardAmount = new anchor.BN(100);
 
   //authorized info
   let authorizedCreator = provider.wallet.publicKey;
   let authorizedNameStarts = ['Helios'];
 
   //nft mint and metadata
-  let mintPubkey: PublicKey;
-  let metadataPubkey: PublicKey;
+  let nftMintPubkey: PublicKey[] = [];
+  let nftMetadataPubkey: PublicKey[] = [];
+  let nftToken: Token[] = [];
+  let nftCount = 4;
 
   //reward mint and metadata
   let rewardMintPubkey: PublicKey[] = [];
   let rewardMetadataPubkey: PublicKey[] = [];
   let rewardToken: Token[] = [];
+  let rewardCount = 2;
 
-  it('Prepare Mint NFT', async () => {
-    const data = nft_data(provider.wallet.publicKey);
-    const json_url = nft_json_url;
-    const lamports = await Token.getMinBalanceRentForExemptMint(
-      provider.connection
+  let notRewardMintPubkey: PublicKey;
+  let notRewardMetadataPubkey: PublicKey;
+
+  it('Prepare Aury', async () => {
+    // Aury MintAccount
+    const rawData = fs.readFileSync(
+      'tests/keys/aury-teST1ieLrLdr4MJPZ7i8mgSCLQ7rTrPRjNnyFdHFaz9.json'
     );
-    const [mint, metadataPDA, tx] = await createMint(
-      provider.wallet.publicKey,
-      provider.wallet.publicKey,
-      lamports,
-      data,
-      json_url
-    );
-    const signers = [mint];
-
-    await provider.send(tx, signers);
-
-    mintPubkey = mint.publicKey;
-    metadataPubkey = metadataPDA;
-  });
-
-  it('Mint NFT', async () => {
-    userNFTTokenAccount = await createTokenAccount(
+    const keyData = JSON.parse(rawData.toString());
+    const mintKey = anchor.web3.Keypair.fromSecretKey(new Uint8Array(keyData));
+    auryToken = await createTokenMint(
       provider,
-      mintPubkey,
+      mintKey,
+      provider.wallet.publicKey,
+      null,
+      9,
+      TOKEN_PROGRAM_ID
+    );
+
+    // User Aury TokenAccount and Mint 1000 AURY
+    auryMintPubkey = auryToken.publicKey;
+    userAuryTokenAccount = await createTokenAccount(
+      provider,
+      auryMintPubkey,
       provider.wallet.publicKey
     );
-
-    await mintToAccount(provider, mintPubkey, userNFTTokenAccount, 1);
+    await mintToAccount(provider, auryMintPubkey, userAuryTokenAccount, 1000);
   });
 
-  it('Is initialized!', async () => {
+  it('Prepare NFT that will be staked', async () => {
+    for (let i = 0; i < nftCount; i++) {
+      // NFT MintAccount
+      const data = nft_data(provider.wallet.publicKey);
+      const json_url = nft_json_url;
+      const lamports = await Token.getMinBalanceRentForExemptMint(
+        provider.connection
+      );
+      const [mint, metadataPDA, tx] = await createMint(
+        provider.wallet.publicKey,
+        provider.wallet.publicKey,
+        lamports,
+        data,
+        json_url
+      );
+      const signers = [mint];
+
+      await provider.send(tx, signers);
+
+      nftMintPubkey.push(mint.publicKey);
+      nftMetadataPubkey.push(metadataPDA);
+      nftToken.push(
+        new Token(provider.connection, mint.publicKey, TOKEN_PROGRAM_ID, null)
+      );
+
+      // User NFT TokenAccount and Mint 1~5 NFTs
+      const tokenAccount = await createTokenAccount(
+        provider,
+        mint.publicKey,
+        provider.wallet.publicKey
+      );
+      await mintToAccount(provider, mint.publicKey, tokenAccount, i + 1);
+      userNFTTokenAccount.push(tokenAccount);
+
+      // NFT vault pda
+      let [pubkey, bump] = await anchor.web3.PublicKey.findProgramAddress(
+        [provider.wallet.publicKey.toBuffer(), mint.publicKey.toBuffer()],
+        program.programId
+      );
+
+      nftVaultPubkey.push(pubkey);
+      nftVaultBump.push(bump);
+    }
+  });
+
+  it('Prepare staking & aury_vault pda', async () => {
     [stakingPubkey, stakingBump] =
       await anchor.web3.PublicKey.findProgramAddress(
         [Buffer.from(anchor.utils.bytes.utf8.encode('nft_staking'))],
         program.programId
       );
+    [auryVaultPubkey, auryVaultBump] =
+      await anchor.web3.PublicKey.findProgramAddress(
+        [auryMintPubkey.toBuffer()],
+        program.programId
+      );
+  });
 
+  it('Prepare Reward Mint NFT ', async () => {
+    for (let i = 0; i <= rewardCount; i++) {
+      // Reward NFT MintAccount
+      const data = nft_data(provider.wallet.publicKey);
+      const json_url = nft_json_url;
+      const lamports = await Token.getMinBalanceRentForExemptMint(
+        provider.connection
+      );
+
+      const [mint, metadataPDA, tx] = await createMint(
+        provider.wallet.publicKey,
+        provider.wallet.publicKey,
+        lamports,
+        data,
+        json_url
+      );
+      const signers = [mint];
+      await provider.send(tx, signers);
+
+      rewardMintPubkey.push(mint.publicKey);
+      rewardMetadataPubkey.push(metadataPDA);
+      rewardToken.push(
+        new Token(provider.connection, mint.publicKey, TOKEN_PROGRAM_ID, null)
+      );
+
+      // Reward NFT Mint Authority to the program staking pda
+      await setMintAuthority(provider, mint.publicKey, stakingPubkey);
+
+      // User Reward NFT TokenAccount
+      userRewardTokenAccount.push(
+        await createTokenAccount(
+          provider,
+          mint.publicKey,
+          provider.wallet.publicKey
+        )
+      );
+    }
+  });
+
+  it('Is initialized!', async () => {
     await program.rpc.initialize(
       stakingBump,
+      auryVaultBump,
       authorizedCreator,
       authorizedNameStarts,
+      minimumStakingPeriod,
+      maximumStakingPeriod,
       {
         accounts: {
           stakingAccount: stakingPubkey,
+          auryMint: auryMintPubkey,
+          auryVault: auryVaultPubkey,
           initializer: provider.wallet.publicKey,
           systemProgram: anchor.web3.SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
@@ -108,93 +232,29 @@ describe('nft-staking', () => {
         },
       }
     );
-  });
 
-  it('Prepare Reward Mint NFT', async () => {
-    const data = nft_data(provider.wallet.publicKey);
-    const json_url = nft_json_url;
-    const lamports = await Token.getMinBalanceRentForExemptMint(
-      provider.connection
+    const stakingAccount = await program.account.stakingAccount.fetch(
+      stakingPubkey
     );
-
-    //// 0
-    const [mint0, metadataPDA0, tx0] = await createMint(
-      provider.wallet.publicKey,
-      provider.wallet.publicKey,
-      lamports,
-      data,
-      json_url
+    assert.equal(
+      stakingAccount.adminKey.toString(),
+      provider.wallet.publicKey.toString()
     );
-    const signers0 = [mint0];
-    await provider.send(tx0, signers0);
-
-    rewardMintPubkey.push(mint0.publicKey);
-    rewardMetadataPubkey.push(metadataPDA0);
-    rewardToken.push(
-      new Token(provider.connection, mint0.publicKey, TOKEN_PROGRAM_ID, null)
+    assert.equal(
+      stakingAccount.authorizedCreator.toString(),
+      authorizedCreator.toString()
     );
-
-    await setMintAuthority(provider, mint0.publicKey, stakingPubkey);
-
-    //// 1
-    const [mint1, metadataPDA1, tx1] = await createMint(
-      provider.wallet.publicKey,
-      provider.wallet.publicKey,
-      lamports,
-      data,
-      json_url
+    assert.equal(
+      stakingAccount.authorizedNameStarts.toString(),
+      authorizedNameStarts.toString()
     );
-    const signers1 = [mint1];
-    await provider.send(tx1, signers1);
-
-    rewardMintPubkey.push(mint1.publicKey);
-    rewardMetadataPubkey.push(metadataPDA1);
-    rewardToken.push(
-      new Token(provider.connection, mint1.publicKey, TOKEN_PROGRAM_ID, null)
+    assert.equal(
+      stakingAccount.minimumStakingPeriod.toNumber(),
+      minimumStakingPeriod.toNumber()
     );
-
-    await setMintAuthority(provider, mint1.publicKey, stakingPubkey);
-
-    //// 2
-    const [mint2, metadataPDA2, tx2] = await createMint(
-      provider.wallet.publicKey,
-      provider.wallet.publicKey,
-      lamports,
-      data,
-      json_url
-    );
-    const signers2 = [mint2];
-    await provider.send(tx2, signers2);
-
-    rewardMintPubkey.push(mint2.publicKey);
-    rewardMetadataPubkey.push(metadataPDA2);
-    rewardToken.push(
-      new Token(provider.connection, mint2.publicKey, TOKEN_PROGRAM_ID, null)
-    );
-
-    await setMintAuthority(provider, mint2.publicKey, stakingPubkey);
-
-    //// Create User Reward Token Account
-    userRewardTokenAccount.push(
-      await createTokenAccount(
-        provider,
-        mint0.publicKey,
-        provider.wallet.publicKey
-      )
-    );
-    userRewardTokenAccount.push(
-      await createTokenAccount(
-        provider,
-        mint1.publicKey,
-        provider.wallet.publicKey
-      )
-    );
-    userRewardTokenAccount.push(
-      await createTokenAccount(
-        provider,
-        mint2.publicKey,
-        provider.wallet.publicKey
-      )
+    assert.equal(
+      stakingAccount.maximumStakingPeriod.toNumber(),
+      maximumStakingPeriod.toNumber()
     );
   });
 
@@ -206,23 +266,13 @@ describe('nft-staking', () => {
       },
     });
 
-    const rewardToken0Info = await rewardToken[0].getMintInfo();
-    assert.strictEqual(
-      rewardToken0Info.mintAuthority.toString(),
-      stakingPubkey.toString()
-    );
-
-    const rewardToken1Info = await rewardToken[1].getMintInfo();
-    assert.strictEqual(
-      rewardToken1Info.mintAuthority.toString(),
-      stakingPubkey.toString()
-    );
-
-    const rewardToken2Info = await rewardToken[2].getMintInfo();
-    assert.strictEqual(
-      rewardToken2Info.mintAuthority.toString(),
-      stakingPubkey.toString()
-    );
+    for (let i = 0; i <= rewardCount; i++) {
+      const rewardTokenInfo = await rewardToken[i].getMintInfo();
+      assert.strictEqual(
+        rewardTokenInfo.mintAuthority.toString(),
+        stakingPubkey.toString()
+      );
+    }
 
     const stakingAccount = await program.account.stakingAccount.fetch(
       stakingPubkey
@@ -237,30 +287,34 @@ describe('nft-staking', () => {
     await program.rpc.removeReward(stakingBump, {
       accounts: {
         stakingAccount: stakingPubkey,
-        nftMint: rewardMintPubkey[2],
+        nftMint: rewardMintPubkey[rewardCount],
         nftMintAuthorityTo: provider.wallet.publicKey,
         admin: provider.wallet.publicKey,
         tokenProgram: TOKEN_PROGRAM_ID,
       },
     });
 
-    const rewardToken2Info = await rewardToken[2].getMintInfo();
+    const rewardTokenInfo = await rewardToken[rewardCount].getMintInfo();
     assert.strictEqual(
-      rewardToken2Info.mintAuthority.toString(),
+      rewardTokenInfo.mintAuthority.toString(),
       provider.wallet.publicKey.toString()
     );
+
+    notRewardMintPubkey = rewardMintPubkey.pop();
+    notRewardMetadataPubkey = rewardMetadataPubkey.pop();
+    rewardToken.pop();
 
     const stakingAccount = await program.account.stakingAccount.fetch(
       stakingPubkey
     );
     assert.equal(
       stakingAccount.activeRewards.toString(),
-      [rewardMintPubkey[0], rewardMintPubkey[1]].toString()
+      rewardMintPubkey.toString()
     );
   });
 
   it('Add/Remove authorized name starts', async () => {
-    let newAuthorizedNameStarts = ['ABC'];
+    let newAuthorizedNameStarts = ['ABC', 'DEF'];
 
     // Add
     await program.rpc.addAuthorizedNameStarts(
@@ -303,14 +357,55 @@ describe('nft-staking', () => {
     );
   });
 
+  it('Update staking period', async () => {
+    let newMinimumStakingPeriod = new anchor.BN(5);
+    let newMaximumStakingPeriod = new anchor.BN(10);
+
+    await program.rpc.updateStakingPeriod(
+      stakingBump,
+      newMinimumStakingPeriod,
+      newMaximumStakingPeriod,
+      {
+        accounts: {
+          stakingAccount: stakingPubkey,
+          admin: provider.wallet.publicKey,
+        },
+      }
+    );
+
+    const stakingAccount = await program.account.stakingAccount.fetch(
+      stakingPubkey
+    );
+    assert.equal(
+      stakingAccount.minimumStakingPeriod.toNumber(),
+      newMinimumStakingPeriod.toNumber()
+    );
+    assert.equal(
+      stakingAccount.maximumStakingPeriod.toNumber(),
+      newMaximumStakingPeriod.toNumber()
+    );
+
+    await program.rpc.updateStakingPeriod(
+      stakingBump,
+      minimumStakingPeriod,
+      maximumStakingPeriod,
+      {
+        accounts: {
+          stakingAccount: stakingPubkey,
+          admin: provider.wallet.publicKey,
+        },
+      }
+    );
+  });
+
   it('Update fake authorized creator', async () => {
-    let newAuthorizedCreator = new PublicKey(
+    let fakeAuthorizedCreator = new PublicKey(
       '2j85gueUvAFeFEdKZE5yKAvyAsU8fKKZvxX8zLbX8GCc'
     );
 
     await program.rpc.updateAuthorizedCreator(
       stakingBump,
-      newAuthorizedCreator,
+      fakeAuthorizedCreator,
       {
         accounts: {
           stakingAccount: stakingPubkey,
@@ -324,38 +419,77 @@ describe('nft-staking', () => {
     );
     assert.equal(
       stakingAccount.authorizedCreator.toString(),
-      newAuthorizedCreator.toString()
+      fakeAuthorizedCreator.toString()
     );
   });
 
   it('Stake failed with mis-match NFT', async () => {
-    [nftVaultPubkey, nftVaultBump] =
-      await anchor.web3.PublicKey.findProgramAddress(
-        [mintPubkey.toBuffer()],
-        program.programId
-      );
-    [userStakingPubkey, userStakingBump] =
+    // UserStakingCounterAccount pda
+    [userStakingCounterPubkey, userStakingCounterBump] =
       await anchor.web3.PublicKey.findProgramAddress(
         [provider.wallet.publicKey.toBuffer()],
         program.programId
       );
 
+    // UserStakingAccount pda
+    [userStakingPubkey, userStakingBump] =
+      await anchor.web3.PublicKey.findProgramAddress(
+        [
+          Buffer.from(
+            anchor.utils.bytes.utf8.encode(new anchor.BN(0).toString())
+          ),
+          provider.wallet.publicKey.toBuffer(),
+        ],
+        program.programId
+      );
+
+    // nftVaultBumps
+    let nftVaultBumps = Buffer.from([nftVaultBump[0]]);
+
+    // Remaining accounts - mint, metadata, tokenAccount, vault
+    let remainingAccounts = [
+      {
+        pubkey: nftMintPubkey[0],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMetadataPubkey[0],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[0],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[0],
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
     await assert.rejects(
       async () => {
-        await program.rpc.stake(nftVaultBump, stakingBump, userStakingBump, {
-          accounts: {
-            nftMint: mintPubkey,
-            nftMetadata: metadataPubkey,
-            nftFrom: userNFTTokenAccount,
-            nftFromAuthority: provider.wallet.publicKey,
-            nftVault: nftVaultPubkey,
-            stakingAccount: stakingPubkey,
-            userStakingAccount: userStakingPubkey,
-            systemProgram: anchor.web3.SystemProgram.programId,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-          },
-        });
+        await program.rpc.stake(
+          nftVaultBumps,
+          stakingBump,
+          userStakingCounterBump,
+          userStakingBump,
+          {
+            accounts: {
+              nftFromAuthority: provider.wallet.publicKey,
+              stakingAccount: stakingPubkey,
+              userStakingCounterAccount: userStakingCounterPubkey,
+              userStakingAccount: userStakingPubkey,
+              systemProgram: anchor.web3.SystemProgram.programId,
+              tokenProgram: TOKEN_PROGRAM_ID,
+              rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+            },
+            remainingAccounts,
+          }
+        );
       },
       {
         message: '6002: No authorized creators found in metadata',
@@ -381,81 +515,450 @@ describe('nft-staking', () => {
   });
 
   it('Stake failed with mis-match mint & metadata', async () => {
-    await assert.rejects(
-      async () => {
-        await program.rpc.stake(nftVaultBump, stakingBump, userStakingBump, {
-          accounts: {
-            nftMint: mintPubkey,
-            nftMetadata: rewardMetadataPubkey[0],
-            nftFrom: userNFTTokenAccount,
-            nftFromAuthority: provider.wallet.publicKey,
-            nftVault: nftVaultPubkey,
-            stakingAccount: stakingPubkey,
-            userStakingAccount: userStakingPubkey,
-            systemProgram: anchor.web3.SystemProgram.programId,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-          },
-        });
+    // nftVaultBumps
+    let nftVaultBumps = Buffer.from([nftVaultBump[0]]);
+
+    // Remaining accounts - mint, metadata, tokenAccount, vault
+    let remainingAccounts = [
+      {
+        pubkey: nftMintPubkey[0],
+        isWritable: false,
+        isSigner: false,
       },
       {
-        message: '6011: Derived Key Invalid',
+        pubkey: rewardMetadataPubkey[0],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[0],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[0],
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    await assert.rejects(
+      async () => {
+        await program.rpc.stake(
+          nftVaultBumps,
+          stakingBump,
+          userStakingCounterBump,
+          userStakingBump,
+          {
+            accounts: {
+              nftFromAuthority: provider.wallet.publicKey,
+              stakingAccount: stakingPubkey,
+              userStakingCounterAccount: userStakingCounterPubkey,
+              userStakingAccount: userStakingPubkey,
+              systemProgram: anchor.web3.SystemProgram.programId,
+              tokenProgram: TOKEN_PROGRAM_ID,
+              rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+            },
+            remainingAccounts,
+          }
+        );
+      },
+      {
+        message: '6011: Derived key invalid',
       }
     );
   });
 
-  it('Stake success with match NFT', async () => {
-    assert.equal(await getTokenBalance(userNFTTokenAccount), 1);
+  it('Stake success with match NFT - 0, 1', async () => {
+    // nft balance of user
+    assert.equal(await getTokenBalance(userNFTTokenAccount[0]), 1);
+    assert.equal(await getTokenBalance(userNFTTokenAccount[1]), 2);
 
-    [nftVaultPubkey, nftVaultBump] =
-      await anchor.web3.PublicKey.findProgramAddress(
-        [mintPubkey.toBuffer()],
-        program.programId
-      );
-    [userStakingPubkey, userStakingBump] =
-      await anchor.web3.PublicKey.findProgramAddress(
-        [provider.wallet.publicKey.toBuffer()],
-        program.programId
-      );
+    // nftVaultBumps
+    let nftVaultBumps = Buffer.from([nftVaultBump[0], nftVaultBump[1]]);
 
-    await program.rpc.stake(nftVaultBump, stakingBump, userStakingBump, {
-      accounts: {
-        nftMint: mintPubkey,
-        nftMetadata: metadataPubkey,
-        nftFrom: userNFTTokenAccount,
-        nftFromAuthority: provider.wallet.publicKey,
-        nftVault: nftVaultPubkey,
-        stakingAccount: stakingPubkey,
-        userStakingAccount: userStakingPubkey,
-        systemProgram: anchor.web3.SystemProgram.programId,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+    // Remaining accounts - mint, metadata, tokenAccount, vault
+    let remainingAccounts = [
+      {
+        pubkey: nftMintPubkey[0],
+        isWritable: false,
+        isSigner: false,
       },
-    });
+      {
+        pubkey: nftMetadataPubkey[0],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[0],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[0],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMintPubkey[1],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMetadataPubkey[1],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[1],
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
 
-    assert.equal(await getTokenBalance(userNFTTokenAccount), 0);
-    assert.equal(await getTokenBalance(nftVaultPubkey), 1);
+    await program.rpc.stake(
+      nftVaultBumps,
+      stakingBump,
+      userStakingCounterBump,
+      userStakingBump,
+      {
+        accounts: {
+          nftFromAuthority: provider.wallet.publicKey,
+          stakingAccount: stakingPubkey,
+          userStakingCounterAccount: userStakingCounterPubkey,
+          userStakingAccount: userStakingPubkey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        },
+        remainingAccounts,
+      }
+    );
 
+    // nft balance of user and program
+    assert.equal(await getTokenBalance(userNFTTokenAccount[0]), 0);
+    assert.equal(await getTokenBalance(nftVaultPubkey[0]), 1);
+    assert.equal(await getTokenBalance(userNFTTokenAccount[1]), 1);
+    assert.equal(await getTokenBalance(nftVaultPubkey[1]), 1);
+
+    // user staking account
     const userStakingAccount = await program.account.userStakingAccount.fetch(
       userStakingPubkey
     );
     assert.equal(
       userStakingAccount.nftMintKeys.toString(),
-      [mintPubkey].toString()
+      [nftMintPubkey[0], nftMintPubkey[1]].toString()
+    );
+  });
+
+  it('Stake success with match NFT - 1, 2, 3', async () => {
+    // nft balance of user
+    assert.equal(await getTokenBalance(userNFTTokenAccount[1]), 1);
+    assert.equal(await getTokenBalance(userNFTTokenAccount[2]), 3);
+    assert.equal(await getTokenBalance(userNFTTokenAccount[3]), 4);
+
+    // nftVaultBumps
+    let nftVaultBumps = Buffer.from([
+      nftVaultBump[1],
+      nftVaultBump[2],
+      nftVaultBump[3],
+    ]);
+
+    // Remaining accounts - mint, metadata, tokenAccount, vault
+    let remainingAccounts = [
+      {
+        pubkey: nftMintPubkey[1],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMetadataPubkey[1],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMintPubkey[2],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMetadataPubkey[2],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[2],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[2],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMintPubkey[3],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMetadataPubkey[3],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[3],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[3],
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    await program.rpc.stake(
+      nftVaultBumps,
+      stakingBump,
+      userStakingCounterBump,
+      userStakingBump,
+      {
+        accounts: {
+          nftFromAuthority: provider.wallet.publicKey,
+          stakingAccount: stakingPubkey,
+          userStakingCounterAccount: userStakingCounterPubkey,
+          userStakingAccount: userStakingPubkey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        },
+        remainingAccounts,
+      }
+    );
+
+    // nft balance of user and program
+    assert.equal(await getTokenBalance(userNFTTokenAccount[1]), 0);
+    assert.equal(await getTokenBalance(nftVaultPubkey[1]), 2);
+    assert.equal(await getTokenBalance(userNFTTokenAccount[2]), 2);
+    assert.equal(await getTokenBalance(nftVaultPubkey[2]), 1);
+    assert.equal(await getTokenBalance(userNFTTokenAccount[3]), 3);
+    assert.equal(await getTokenBalance(nftVaultPubkey[3]), 1);
+
+    // user staking account
+    const userStakingAccount = await program.account.userStakingAccount.fetch(
+      userStakingPubkey
+    );
+    assert.equal(
+      userStakingAccount.nftMintKeys.toString(),
+      [
+        nftMintPubkey[0],
+        nftMintPubkey[1],
+        nftMintPubkey[1],
+        nftMintPubkey[2],
+        nftMintPubkey[3],
+      ].toString()
+    );
+  });
+
+  it('Unstake failed for not locked staking', async () => {
+    await assert.rejects(
+      async () => {
+        await program.rpc.unstake(
+          stakingBump,
+          userStakingIndex,
+          userStakingBump,
+          {
+            accounts: {
+              nftToAuthority: provider.wallet.publicKey,
+              stakingAccount: stakingPubkey,
+              userStakingAccount: userStakingPubkey,
+              tokenProgram: TOKEN_PROGRAM_ID,
+            },
+          }
+        );
+      },
+      {
+        message: '6017: Staking not locked',
+      }
+    );
+  });
+
+  it('Lock stake failed with invalid staking period', async () => {
+    let invalidStakingPeriod = maximumStakingPeriod.add(minimumStakingPeriod);
+
+    await assert.rejects(
+      async () => {
+        await program.rpc.lockStake(
+          stakingBump,
+          userStakingCounterBump,
+          userStakingBump,
+          invalidStakingPeriod,
+          {
+            accounts: {
+              nftFromAuthority: provider.wallet.publicKey,
+              stakingAccount: stakingPubkey,
+              userStakingCounterAccount: userStakingCounterPubkey,
+              userStakingAccount: userStakingPubkey,
+            },
+          }
+        );
+      },
+      {
+        message: '6015: Invalid staking period',
+      }
+    );
+  });
+
+  it('Add winner failed for not locked staking', async () => {
+    await assert.rejects(
+      async () => {
+        await program.rpc.addWinner(
+          stakingBump,
+          userStakingIndex,
+          winner,
+          userStakingBump,
+          {
+            accounts: {
+              nftMint: rewardMintPubkey[0],
+              stakingAccount: stakingPubkey,
+              userStakingAccount: userStakingPubkey,
+              admin: provider.wallet.publicKey,
+            },
+          }
+        );
+      },
+      {
+        message: '6017: Staking not locked',
+      }
+    );
+  });
+
+  it('Add aury winner failed for not locked staking', async () => {
+    await assert.rejects(
+      async () => {
+        await program.rpc.addAuryWinner(
+          stakingBump,
+          auryVaultBump,
+          userStakingIndex,
+          winner,
+          userStakingBump,
+          userAuryRewardAmount,
+          {
+            accounts: {
+              stakingAccount: stakingPubkey,
+              auryMint: auryMintPubkey,
+              auryVault: auryVaultPubkey,
+              userStakingAccount: userStakingPubkey,
+              auryFrom: userAuryTokenAccount,
+              admin: provider.wallet.publicKey,
+              tokenProgram: TOKEN_PROGRAM_ID,
+            },
+          }
+        );
+      },
+      {
+        message: '6017: Staking not locked',
+      }
+    );
+  });
+
+  it('Lock stake success with valid staking period', async () => {
+    let userStakingAtFloor = dayjs().unix() - 1;
+
+    await program.rpc.lockStake(
+      stakingBump,
+      userStakingCounterBump,
+      userStakingBump,
+      userStakingPeriod,
+      {
+        accounts: {
+          nftFromAuthority: provider.wallet.publicKey,
+          stakingAccount: stakingPubkey,
+          userStakingCounterAccount: userStakingCounterPubkey,
+          userStakingAccount: userStakingPubkey,
+        },
+      }
+    );
+
+    let userStakingAtCeil = dayjs().unix() + 1;
+
+    let userStakingCounterAccount =
+      await program.account.userStakingCounterAccount.fetch(
+        userStakingCounterPubkey
+      );
+    assert.equal(userStakingCounterAccount.counter, 1);
+
+    let userStakingAccount = await program.account.userStakingAccount.fetch(
+      userStakingPubkey
+    );
+    assert.equal(
+      userStakingAccount.stakingPeriod.toNumber(),
+      userStakingPeriod.toNumber()
+    );
+    expect(userStakingAccount.stakingAt.toNumber()).to.be.at.least(
+      userStakingAtFloor
+    );
+    expect(userStakingAccount.stakingAt.toNumber()).to.be.at.most(
+      userStakingAtCeil
+    );
+  });
+
+  it('Unstake failed for locked staking', async () => {
+    await assert.rejects(
+      async () => {
+        await program.rpc.unstake(
+          stakingBump,
+          userStakingIndex,
+          userStakingBump,
+          {
+            accounts: {
+              nftToAuthority: provider.wallet.publicKey,
+              stakingAccount: stakingPubkey,
+              userStakingAccount: userStakingPubkey,
+              tokenProgram: TOKEN_PROGRAM_ID,
+            },
+          }
+        );
+      },
+      {
+        message: '6016: Staking locked',
+      }
     );
   });
 
   it('Add winner failed with not reward nft', async () => {
     await assert.rejects(
       async () => {
-        await program.rpc.addWinner(stakingBump, userStakingBump, winner, {
-          accounts: {
-            nftMint: rewardMintPubkey[2],
-            stakingAccount: stakingPubkey,
-            userStakingAccount: userStakingPubkey,
-            admin: provider.wallet.publicKey,
-          },
-        });
+        await program.rpc.addWinner(
+          stakingBump,
+          userStakingIndex,
+          winner,
+          userStakingBump,
+          {
+            accounts: {
+              nftMint: notRewardMintPubkey,
+              stakingAccount: stakingPubkey,
+              userStakingAccount: userStakingPubkey,
+              admin: provider.wallet.publicKey,
+            },
+          }
+        );
       },
       {
         message: '6001: Invalid mint for reward',
@@ -464,30 +967,48 @@ describe('nft-staking', () => {
   });
 
   it('Add winner success with right reward nft', async () => {
-    await program.rpc.addWinner(stakingBump, userStakingBump, winner, {
-      accounts: {
-        nftMint: rewardMintPubkey[0],
-        stakingAccount: stakingPubkey,
-        userStakingAccount: userStakingPubkey,
-        admin: provider.wallet.publicKey,
-      },
-    });
-    await program.rpc.addWinner(stakingBump, userStakingBump, winner, {
-      accounts: {
-        nftMint: rewardMintPubkey[0],
-        stakingAccount: stakingPubkey,
-        userStakingAccount: userStakingPubkey,
-        admin: provider.wallet.publicKey,
-      },
-    });
-    await program.rpc.addWinner(stakingBump, userStakingBump, winner, {
-      accounts: {
-        nftMint: rewardMintPubkey[1],
-        stakingAccount: stakingPubkey,
-        userStakingAccount: userStakingPubkey,
-        admin: provider.wallet.publicKey,
-      },
-    });
+    await program.rpc.addWinner(
+      stakingBump,
+      userStakingIndex,
+      winner,
+      userStakingBump,
+      {
+        accounts: {
+          nftMint: rewardMintPubkey[0],
+          stakingAccount: stakingPubkey,
+          userStakingAccount: userStakingPubkey,
+          admin: provider.wallet.publicKey,
+        },
+      }
+    );
+    await program.rpc.addWinner(
+      stakingBump,
+      userStakingIndex,
+      winner,
+      userStakingBump,
+      {
+        accounts: {
+          nftMint: rewardMintPubkey[0],
+          stakingAccount: stakingPubkey,
+          userStakingAccount: userStakingPubkey,
+          admin: provider.wallet.publicKey,
+        },
+      }
+    );
+    await program.rpc.addWinner(
+      stakingBump,
+      userStakingIndex,
+      winner,
+      userStakingBump,
+      {
+        accounts: {
+          nftMint: rewardMintPubkey[1],
+          stakingAccount: stakingPubkey,
+          userStakingAccount: userStakingPubkey,
+          admin: provider.wallet.publicKey,
+        },
+      }
+    );
 
     const userStakingAccount = await program.account.userStakingAccount.fetch(
       userStakingPubkey
@@ -501,20 +1022,61 @@ describe('nft-staking', () => {
     );
   });
 
-  it('Unstake failed before claim', async () => {
+  it('Add aury winner success', async () => {
+    let oldBalance = await getTokenBalance(userAuryTokenAccount);
+    let oldUserStakingAccount = await program.account.userStakingAccount.fetch(
+      userStakingPubkey
+    );
+
+    await program.rpc.addAuryWinner(
+      stakingBump,
+      auryVaultBump,
+      userStakingIndex,
+      winner,
+      userStakingBump,
+      userAuryRewardAmount,
+      {
+        accounts: {
+          stakingAccount: stakingPubkey,
+          auryMint: auryMintPubkey,
+          auryVault: auryVaultPubkey,
+          userStakingAccount: userStakingPubkey,
+          auryFrom: userAuryTokenAccount,
+          admin: provider.wallet.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+      }
+    );
+
+    let newBalance = await getTokenBalance(userAuryTokenAccount);
+    let newUserStakingAccount = await program.account.userStakingAccount.fetch(
+      userStakingPubkey
+    );
+
+    assert.equal(oldBalance - newBalance, userAuryRewardAmount.toNumber());
+    assert.equal(
+      newUserStakingAccount.claimableAuryAmount.toNumber() -
+        oldUserStakingAccount.claimableAuryAmount.toNumber(),
+      userAuryRewardAmount.toNumber()
+    );
+  });
+
+  it('Unstake failed before claim all rewards', async () => {
     await assert.rejects(
       async () => {
-        await program.rpc.unstake(nftVaultBump, stakingBump, userStakingBump, {
-          accounts: {
-            nftMint: mintPubkey,
-            nftTo: userNFTTokenAccount,
-            nftToAuthority: provider.wallet.publicKey,
-            nftVault: nftVaultPubkey,
-            stakingAccount: stakingPubkey,
-            userStakingAccount: userStakingPubkey,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          },
-        });
+        await program.rpc.unstake(
+          stakingBump,
+          userStakingIndex,
+          userStakingBump,
+          {
+            accounts: {
+              nftToAuthority: provider.wallet.publicKey,
+              stakingAccount: stakingPubkey,
+              userStakingAccount: userStakingPubkey,
+              tokenProgram: TOKEN_PROGRAM_ID,
+            },
+          }
+        );
       },
       {
         message: "6008: Can't unstake before claim all rewards",
@@ -525,16 +1087,21 @@ describe('nft-staking', () => {
   it('Claim failed for not reward', async () => {
     await assert.rejects(
       async () => {
-        await program.rpc.claim(stakingBump, userStakingBump, {
-          accounts: {
-            nftMint: rewardMintPubkey[2],
-            nftTo: userRewardTokenAccount[2],
-            nftToAuthority: provider.wallet.publicKey,
-            stakingAccount: stakingPubkey,
-            userStakingAccount: userStakingPubkey,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          },
-        });
+        await program.rpc.claim(
+          stakingBump,
+          userStakingIndex,
+          userStakingBump,
+          {
+            accounts: {
+              nftMint: notRewardMintPubkey,
+              nftTo: userRewardTokenAccount[2],
+              nftToAuthority: provider.wallet.publicKey,
+              stakingAccount: stakingPubkey,
+              userStakingAccount: userStakingPubkey,
+              tokenProgram: TOKEN_PROGRAM_ID,
+            },
+          }
+        );
       },
       {
         message: '6007: Not claimable item',
@@ -543,7 +1110,7 @@ describe('nft-staking', () => {
   });
 
   it('Claim the reward', async () => {
-    await program.rpc.claim(stakingBump, userStakingBump, {
+    await program.rpc.claim(stakingBump, userStakingIndex, userStakingBump, {
       accounts: {
         nftMint: rewardMintPubkey[0],
         nftTo: userRewardTokenAccount[0],
@@ -553,7 +1120,7 @@ describe('nft-staking', () => {
         tokenProgram: TOKEN_PROGRAM_ID,
       },
     });
-    await program.rpc.claim(stakingBump, userStakingBump, {
+    await program.rpc.claim(stakingBump, userStakingIndex, userStakingBump, {
       accounts: {
         nftMint: rewardMintPubkey[1],
         nftTo: userRewardTokenAccount[1],
@@ -568,41 +1135,116 @@ describe('nft-staking', () => {
     assert.equal(await getTokenBalance(userRewardTokenAccount[1]), 1);
   });
 
+  it('Claim the aury reward', async () => {
+    let oldBalance = await getTokenBalance(userAuryTokenAccount);
+
+    await program.rpc.claimAuryReward(
+      auryVaultBump,
+      userStakingIndex,
+      userStakingBump,
+      {
+        accounts: {
+          auryMint: auryMintPubkey,
+          auryVault: auryVaultPubkey,
+          auryTo: userAuryTokenAccount,
+          auryToAuthority: provider.wallet.publicKey,
+          userStakingAccount: userStakingPubkey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+      }
+    );
+
+    let newBalance = await getTokenBalance(userAuryTokenAccount);
+    let userStakingAccount = await program.account.userStakingAccount.fetch(
+      userStakingPubkey
+    );
+
+    assert.equal(newBalance - oldBalance, userAuryRewardAmount.toNumber());
+    assert.equal(userStakingAccount.claimableAuryAmount.toNumber(), 0);
+  });
+
   it('Unstake success after claim', async () => {
-    await program.rpc.unstake(nftVaultBump, stakingBump, userStakingBump, {
+    // Remaining accounts - mint, metadata, tokenAccount, vault
+    let remainingAccounts = [
+      {
+        pubkey: userNFTTokenAccount[0],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[0],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[2],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[2],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[3],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[3],
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    await program.rpc.unstake(stakingBump, userStakingIndex, userStakingBump, {
       accounts: {
-        nftMint: mintPubkey,
-        nftTo: userNFTTokenAccount,
         nftToAuthority: provider.wallet.publicKey,
-        nftVault: nftVaultPubkey,
         stakingAccount: stakingPubkey,
         userStakingAccount: userStakingPubkey,
         tokenProgram: TOKEN_PROGRAM_ID,
       },
+      remainingAccounts,
     });
 
-    assert.equal(await getTokenBalance(userNFTTokenAccount), 1);
+    for (let i = 0; i < 4; i++) {
+      assert.equal(await getTokenBalance(userNFTTokenAccount[i]), i + 1);
+
+      await assert.rejects(
+        async () => {
+          await nftToken[i].getAccountInfo(nftVaultPubkey[i]);
+        },
+        {
+          message: 'Failed to find account',
+        }
+      );
+    }
 
     const userStakingAccount = await program.account.userStakingAccount.fetch(
       userStakingPubkey
     );
     assert.equal(userStakingAccount.nftMintKeys.toString(), [].toString());
-
-    const mintToken = new Token(
-      provider.connection,
-      mintPubkey,
-      TOKEN_PROGRAM_ID,
-      null
-    );
-
-    await assert.rejects(
-      async () => {
-        await mintToken.getAccountInfo(nftVaultPubkey);
-      },
-      {
-        message: 'Failed to find account',
-      }
-    );
   });
 
   it('Mint to', async () => {

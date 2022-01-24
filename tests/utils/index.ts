@@ -7,11 +7,15 @@ import {
 } from '@solana/spl-token';
 import { Token } from '@solana/spl-token';
 import { TokenInstructions } from '@project-serum/serum';
-import { Provider } from '@project-serum/anchor';
+import { web3, Provider } from '@project-serum/anchor';
 
 const { Metadata, MetadataDataData, CreateMetadata, Creator } =
   programs.metadata;
 const Transaction = programs.Transaction;
+
+export function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export async function createMint(
   fee_payer: PublicKey,
@@ -173,4 +177,60 @@ export async function createTokenAccountInstrs(
       owner,
     }),
   ];
+}
+
+export async function createTokenMint(
+  provider: Provider,
+  mintAccount: Keypair,
+  mintAuthority: PublicKey,
+  freezeAuthority: PublicKey | null,
+  decimals: number,
+  programId: PublicKey
+) {
+  const payer = web3.Keypair.generate();
+
+  //airdrop tokens
+  await provider.connection.confirmTransaction(
+    await provider.connection.requestAirdrop(
+      payer.publicKey,
+      1 * web3.LAMPORTS_PER_SOL
+    ),
+    'confirmed'
+  );
+
+  const token = new Token(
+    provider.connection,
+    mintAccount.publicKey,
+    programId,
+    payer
+  );
+
+  // Allocate memory for the account
+  const balanceNeeded = await Token.getMinBalanceRentForExemptMint(
+    provider.connection
+  );
+
+  const transaction = new web3.Transaction();
+  transaction.add(
+    web3.SystemProgram.createAccount({
+      fromPubkey: provider.wallet.publicKey,
+      newAccountPubkey: mintAccount.publicKey,
+      lamports: balanceNeeded,
+      space: MintLayout.span,
+      programId,
+    })
+  );
+
+  transaction.add(
+    Token.createInitMintInstruction(
+      programId,
+      mintAccount.publicKey,
+      decimals,
+      mintAuthority,
+      freezeAuthority
+    )
+  );
+
+  await provider.send(transaction, [mintAccount]);
+  return token;
 }
