@@ -87,7 +87,6 @@ describe('nft-staking', () => {
   let rewardCount = 2;
 
   let notRewardMintPubkey: PublicKey;
-  let notRewardMetadataPubkey: PublicKey;
 
   it('Prepare Aury', async () => {
     // Aury MintAccount
@@ -301,7 +300,6 @@ describe('nft-staking', () => {
     );
 
     notRewardMintPubkey = rewardMintPubkey.pop();
-    notRewardMetadataPubkey = rewardMetadataPubkey.pop();
     rewardToken.pop();
 
     const stakingAccount = await program.account.stakingAccount.fetch(
@@ -492,7 +490,8 @@ describe('nft-staking', () => {
         );
       },
       {
-        message: '6002: No authorized creators found in metadata',
+        code: 6002,
+        // message: '6002: No authorized creators found in metadata',
       }
     );
   });
@@ -564,7 +563,8 @@ describe('nft-staking', () => {
         );
       },
       {
-        message: '6011: Derived key invalid',
+        code: 6011,
+        // message: '6011: Derived key invalid',
       }
     );
   });
@@ -794,7 +794,8 @@ describe('nft-staking', () => {
         );
       },
       {
-        message: '6017: Staking not locked',
+        code: 6017,
+        // message: '6017: Staking not locked',
       }
     );
   });
@@ -820,7 +821,8 @@ describe('nft-staking', () => {
         );
       },
       {
-        message: '6015: Invalid staking period',
+        code: 6015,
+        // message: '6015: Invalid staking period',
       }
     );
   });
@@ -844,7 +846,8 @@ describe('nft-staking', () => {
         );
       },
       {
-        message: '6017: Staking not locked',
+        code: 6017,
+        // message: '6017: Staking not locked',
       }
     );
   });
@@ -873,7 +876,8 @@ describe('nft-staking', () => {
         );
       },
       {
-        message: '6017: Staking not locked',
+        code: 6017,
+        // message: '6017: Staking not locked',
       }
     );
   });
@@ -937,7 +941,8 @@ describe('nft-staking', () => {
         );
       },
       {
-        message: '6016: Staking locked',
+        code: 6016,
+        // message: '6016: Staking locked',
       }
     );
   });
@@ -961,7 +966,8 @@ describe('nft-staking', () => {
         );
       },
       {
-        message: '6001: Invalid mint for reward',
+        code: 6001,
+        // message: '6001: Invalid mint for reward',
       }
     );
   });
@@ -1079,7 +1085,8 @@ describe('nft-staking', () => {
         );
       },
       {
-        message: "6008: Can't unstake before claim all rewards",
+        code: 6008,
+        // message: "6008: Can't unstake before claim all rewards",
       }
     );
   });
@@ -1104,7 +1111,8 @@ describe('nft-staking', () => {
         );
       },
       {
-        message: '6007: Not claimable item',
+        code: 6007,
+        // message: '6007: Not claimable item',
       }
     );
   });
