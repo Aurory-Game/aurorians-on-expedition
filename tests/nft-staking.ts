@@ -286,14 +286,23 @@ describe('nft-staking', () => {
   });
 
   it('Remove reward', async () => {
+    // Remaining accounts - mint(writable)
+    let remainingAccounts = [
+      {
+        pubkey: rewardMintPubkey[rewardCount],
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
     await program.rpc.removeReward(stakingBump, {
       accounts: {
         stakingAccount: stakingPubkey,
-        nftMint: rewardMintPubkey[rewardCount],
         nftMintAuthorityTo: provider.wallet.publicKey,
         admin: provider.wallet.publicKey,
         tokenProgram: TOKEN_PROGRAM_ID,
       },
+      remainingAccounts,
     });
 
     const rewardTokenInfo = await rewardToken[rewardCount].getMintInfo();
@@ -443,7 +452,7 @@ describe('nft-staking', () => {
     // nftVaultBumps
     let nftVaultBumps = Buffer.from([nftVaultBump[0]]);
 
-    // Remaining accounts - mint, metadata, tokenAccount, vault
+    // Remaining accounts - mint(readonly), metadata(readonly), tokenAccount(writable), vault(writable)
     let remainingAccounts = [
       {
         pubkey: nftMintPubkey[0],
@@ -516,7 +525,7 @@ describe('nft-staking', () => {
     // nftVaultBumps
     let nftVaultBumps = Buffer.from([nftVaultBump[0]]);
 
-    // Remaining accounts - mint, metadata, tokenAccount, vault
+    // Remaining accounts - mint(readonly), metadata(readonly), tokenAccount(writable), vault(writable)
     let remainingAccounts = [
       {
         pubkey: nftMintPubkey[0],
@@ -576,7 +585,7 @@ describe('nft-staking', () => {
     // nftVaultBumps
     let nftVaultBumps = Buffer.from([nftVaultBump[0], nftVaultBump[1]]);
 
-    // Remaining accounts - mint, metadata, tokenAccount, vault
+    // Remaining accounts - mint(readonly), metadata(readonly), tokenAccount(writable), vault(writable)
     let remainingAccounts = [
       {
         pubkey: nftMintPubkey[0],
@@ -668,7 +677,7 @@ describe('nft-staking', () => {
       nftVaultBump[3],
     ]);
 
-    // Remaining accounts - mint, metadata, tokenAccount, vault
+    // Remaining accounts - mint(readonly), metadata(readonly), tokenAccount(writable), vault(writable)
     let remainingAccounts = [
       {
         pubkey: nftMintPubkey[1],
@@ -1171,7 +1180,7 @@ describe('nft-staking', () => {
   });
 
   it('Unstake success after claim', async () => {
-    // Remaining accounts - mint, metadata, tokenAccount, vault
+    // Remaining accounts - mint(writable), vault(writable)
     let remainingAccounts = [
       {
         pubkey: userNFTTokenAccount[0],

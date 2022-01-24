@@ -180,39 +180,54 @@ pub mod nft_staking {
     }
 
     #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
-    pub fn remove_reward(ctx: Context<RemoveReward>, nonce_staking: u8) -> ProgramResult {
-        match ctx
-            .accounts
-            .staking_account
-            .active_rewards
-            .iter()
-            .position(|active_reward| active_reward == ctx.accounts.nft_mint.key)
-        {
-            Some(index) => {
-                // remove active reward
-                ctx.accounts.staking_account.active_rewards.remove(index);
+    pub fn remove_reward<'a, 'b, 'c, 'info>(ctx: Context<'a, 'b, 'c, 'info, RemoveReward<'info>>, nonce_staking: u8) -> ProgramResult {
+        // determine the remaining accounts
+        let remaining_accounts = ctx.remaining_accounts;
+        let remaining_accounts_length = ctx.remaining_accounts.len();
 
-                // compute staking account signer seeds
-                let staking_account_seeds =
-                    &[constants::STAKING_PDA_SEED.as_ref(), &[nonce_staking]];
-                let staking_account_signer = &staking_account_seeds[..];
-
-                // transfer nft mint authority
-                spl_set_authority(SetAuthorityParams {
-                    account: ctx.accounts.nft_mint.to_account_info(),
-                    new_authority: ctx.accounts.nft_mint_authority_to.to_account_info(),
-                    authority_type: AuthorityType::MintTokens,
-                    owner: ctx.accounts.staking_account.to_account_info(),
-                    owner_signer_seeds: staking_account_signer,
-                    token_program: ctx.accounts.token_program.to_account_info(),
-                })?;
-
-                return Ok(());
-            }
-            None => {
-                return Err(ErrorCode::InvalidMintForReward.into());
-            }
+        if remaining_accounts_length == 0 {
+            return Err(ErrorCode::InvalidAccounts.into());
         }
+
+        let mut index = 0;
+        while index < remaining_accounts_length {
+            let nft_mint = &remaining_accounts[index];
+
+            match ctx
+                .accounts
+                .staking_account
+                .active_rewards
+                .iter()
+                .position(|active_reward| active_reward == nft_mint.key)
+            {
+                Some(index) => {
+                    // remove active reward
+                    ctx.accounts.staking_account.active_rewards.remove(index);
+
+                    // compute staking account signer seeds
+                    let staking_account_seeds =
+                        &[constants::STAKING_PDA_SEED.as_ref(), &[nonce_staking]];
+                    let staking_account_signer = &staking_account_seeds[..];
+
+                    // transfer nft mint authority
+                    spl_set_authority(SetAuthorityParams {
+                        account: nft_mint.clone(),
+                        new_authority: ctx.accounts.nft_mint_authority_to.to_account_info(),
+                        authority_type: AuthorityType::MintTokens,
+                        owner: ctx.accounts.staking_account.to_account_info(),
+                        owner_signer_seeds: staking_account_signer,
+                        token_program: ctx.accounts.token_program.to_account_info(),
+                    })?;
+                }
+                None => {
+                    return Err(ErrorCode::InvalidMintForReward.into());
+                }
+            }
+
+            index += 1;
+        }
+
+        Ok(())
     }
 
     #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
@@ -307,13 +322,12 @@ pub mod nft_staking {
             return Err(ErrorCode::StakingLocked.into());
         }
 
+        // determine the remaining accounts
         let remaining_accounts = ctx.remaining_accounts;
         let remaining_accounts_length = ctx.remaining_accounts.len();
 
-        // determine the remaining accounts
         if remaining_accounts_length % 4 != 0
-        || nonce_nft_vault.len() != remaining_accounts_length / 4
-        {
+        || nonce_nft_vault.len() != remaining_accounts_length / 4 {
             return Err(ErrorCode::InvalidAccounts.into());
         }
 
@@ -446,10 +460,10 @@ pub mod nft_staking {
             return Err(ErrorCode::StakingLocked.into());
         }
 
+        // determine the remaining accounts
         let remaining_accounts = ctx.remaining_accounts;
         let remaining_accounts_length = ctx.remaining_accounts.len();
 
-        // determine the remaining accounts
         if remaining_accounts_length % 2 != 0
             || remaining_accounts_length / 2 > ctx.accounts.user_staking_account.nft_mint_keys.len()
         {
@@ -772,9 +786,6 @@ pub struct RemoveReward<'info> {
         bump = nonce_staking,
     )]
     pub staking_account: Box<Account<'info, StakingAccount>>,
-
-    #[account(mut)]
-    pub nft_mint: UncheckedAccount<'info>,
 
     #[account(mut)]
     pub nft_mint_authority_to: AccountInfo<'info>,
