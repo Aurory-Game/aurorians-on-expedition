@@ -72,6 +72,9 @@ describe('nft-staking', () => {
 
   //authorized info
   let authorizedCreator = provider.wallet.publicKey;
+  let fakeAuthorizedCreator = new PublicKey(
+    '6EcQDdBqyqDLkdbF8cKusnPrZGsAEhWLyXyvATDwXt2L'
+  );
   let authorizedNameStarts = ['Helios'];
 
   //nft mint and metadata
@@ -397,10 +400,6 @@ describe('nft-staking', () => {
   });
 
   it('Update fake authorized creator', async () => {
-    let fakeAuthorizedCreator = new PublicKey(
-      '2j85gueUvAFeFEdKZE5yKAvyAsU8fKKZvxX8zLbX8GCc'
-    );
-
     await program.rpc.updateAuthorizedCreator(
       stakingBump,
       fakeAuthorizedCreator,
