@@ -1,12 +1,16 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::*, solana_program::program_pack::Pack};
 use metaplex_token_metadata::state::Metadata;
 use spl_token::instruction::AuthorityType;
-
 use {
     crate::*,
     anchor_lang::{
         prelude::{AccountInfo, ProgramResult},
-        solana_program::program::invoke_signed,
+        solana_program::{
+            program::{invoke, invoke_signed},
+            pubkey::Pubkey,
+            rent::Rent,
+            system_instruction,
+        },
     },
 };
 
@@ -52,8 +56,14 @@ pub struct InitializeTokenAccountParams<'a: 'b, 'b> {
     pub mint: AccountInfo<'a>,
     /// owner
     pub owner: AccountInfo<'a>,
+    /// payer
+    pub payer: AccountInfo<'a>,
+    /// system_program
+    pub system_program: AccountInfo<'a>,
     /// token_program
     pub token_program: AccountInfo<'a>,
+    /// rent
+    pub rent: AccountInfo<'a>,
 }
 
 ///SetAuthority
@@ -144,18 +154,29 @@ pub fn spl_init_token_account(params: InitializeTokenAccountParams<'_, '_>) -> P
         account_signer_seeds,
         mint,
         owner,
+        payer,
+        system_program,
         token_program,
+        rent,
     } = params;
 
-    let result = invoke_signed(
+    create_pda_account(
+        &payer,
+        spl_token::state::Account::LEN,
+        token_program.key,
+        &system_program,
+        &account,
+        account_signer_seeds,
+    )?;
+
+    let result = invoke(
         &spl_token::instruction::initialize_account(
             token_program.key,
             account.key,
             mint.key,
             owner.key,
         )?,
-        &[account, mint, owner, token_program],
-        &[account_signer_seeds],
+        &[account, mint, owner, token_program, rent],
     );
 
     result.map_err(|_| ErrorCode::InitializeTokenAccountFailed.into())
@@ -283,5 +304,62 @@ pub fn assert_owned_by(account: &AccountInfo, owner: &Pubkey) -> ProgramResult {
         Err(ErrorCode::IncorrectOwner.into())
     } else {
         Ok(())
+    }
+}
+
+pub fn create_pda_account<'a>(
+    payer: &AccountInfo<'a>,
+    space: usize,
+    owner: &Pubkey,
+    system_program: &AccountInfo<'a>,
+    new_pda_account: &AccountInfo<'a>,
+    new_pda_signer_seeds: &[&[u8]],
+) -> ProgramResult {
+    let rent = Rent::get()?;
+
+    if new_pda_account.lamports() > 0 {
+        let required_lamports = rent
+            .minimum_balance(space)
+            .max(1)
+            .saturating_sub(new_pda_account.lamports());
+
+        if required_lamports > 0 {
+            invoke(
+                &system_instruction::transfer(payer.key, new_pda_account.key, required_lamports),
+                &[
+                    payer.clone(),
+                    new_pda_account.clone(),
+                    system_program.clone(),
+                ],
+            )?;
+        }
+
+        invoke_signed(
+            &system_instruction::allocate(new_pda_account.key, space as u64),
+            &[new_pda_account.clone(), system_program.clone()],
+            &[new_pda_signer_seeds],
+        )?;
+
+        invoke_signed(
+            &system_instruction::assign(new_pda_account.key, owner),
+            &[new_pda_account.clone(), system_program.clone()],
+            &[new_pda_signer_seeds],
+        )
+    } else {
+        invoke_signed(
+            &system_instruction::create_account(
+                payer.key,
+                new_pda_account.key,
+                rent.minimum_balance(space).max(1),
+                space as u64,
+                owner,
+            ),
+            &[
+                payer.clone(),
+                new_pda_account.clone(),
+                system_program.clone(),
+            ],
+            &[new_pda_signer_seeds],
+        )
     }
 }

@@ -5,21 +5,22 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 use spl_token::{instruction::AuthorityType, state::AccountState};
 
-
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 
 #[cfg(not(feature = "local-testing"))]
 pub mod constants {
     pub const AURY_TOKEN_MINT_PUBKEY: &str = "AURYydfxJib1ZkTir1Jn1J9ECYUtjb6rKQVmtYaixWPP";
-    pub const METAPLEX_PROGRAM_ID: &[u8] = b"metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
+    pub const METAPLEX_PROGRAM_ID: &str = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
     pub const STAKING_PDA_SEED: &[u8] = b"nft_staking";
+    pub const AAA: &[u8] = b"0";
 }
 
 #[cfg(feature = "local-testing")]
 pub mod constants {
     pub const AURY_TOKEN_MINT_PUBKEY: &str = "teST1ieLrLdr4MJPZ7i8mgSCLQ7rTrPRjNnyFdHFaz9";
-    pub const METAPLEX_PROGRAM_ID: &[u8] = b"metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
-    pub const STAKING_PDA_SEED: &[u8] = b"staking";
+    pub const METAPLEX_PROGRAM_ID: &str = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
+    pub const STAKING_PDA_SEED: &[u8] = b"nft_staking";
+    pub const AAA: &[u8] = b"0";
 }
 
 #[program]
@@ -279,13 +280,13 @@ pub mod nft_staking {
         }
 
         // transfer aury to the vault
-        spl_token_transfer(TokenTransferParams { 
-            source: ctx.accounts.aury_from.to_account_info(), 
-            destination: ctx.accounts.aury_vault.to_account_info(), 
-            amount: aury_amount, 
-            authority: ctx.accounts.admin.to_account_info(), 
-            authority_signer_seeds: &[], 
-            token_program: ctx.accounts.token_program.to_account_info() 
+        spl_token_transfer(TokenTransferParams {
+            source: ctx.accounts.aury_from.to_account_info(),
+            destination: ctx.accounts.aury_vault.to_account_info(),
+            amount: aury_amount,
+            authority: ctx.accounts.admin.to_account_info(),
+            authority_signer_seeds: &[],
+            token_program: ctx.accounts.token_program.to_account_info(),
         })?;
 
         // update user staking info
@@ -296,7 +297,7 @@ pub mod nft_staking {
 
     pub fn stake<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, Stake<'info>>,
-        _nonce_nft_vault: Vec<u8>,
+        nonce_nft_vault: Vec<u8>,
         _nonce_staking: u8,
         _nonce_user_staking_counter: u8,
         _nonce_user_staking: u8,
@@ -311,14 +312,16 @@ pub mod nft_staking {
 
         // determine the remaining accounts
         if remaining_accounts_length % 4 != 0
-            || _nonce_nft_vault.len() != remaining_accounts_length / 4
+        || nonce_nft_vault.len() != remaining_accounts_length / 4
         {
             return Err(ErrorCode::InvalidAccounts.into());
         }
 
         let nft_from_authority = &ctx.accounts.nft_from_authority;
         let owner = &ctx.accounts.staking_account;
+        let system_program = &ctx.accounts.system_program;
         let token_program = &ctx.accounts.token_program;
+        let rent = &ctx.accounts.rent;
 
         let mut index = 0;
         while index < remaining_accounts_length {
@@ -331,7 +334,7 @@ pub mod nft_staking {
                 nft_metadata,
                 nft_mint.key,
                 ctx.accounts.staking_account.clone(),
-                &Pubkey::new(constants::METAPLEX_PROGRAM_ID),
+                &constants::METAPLEX_PROGRAM_ID.parse::<Pubkey>().unwrap()
             )?;
 
             // init if needed nft vault
@@ -339,7 +342,10 @@ pub mod nft_staking {
                 let nft_vault_token_account = Account::<'_, TokenAccount>::try_from(&nft_vault)?;
 
                 // validate the existing nft vault
-                if nft_vault_token_account.mint != *nft_mint.key || nft_vault_token_account.owner != owner.key() || nft_vault_token_account.state != AccountState::Initialized {
+                if nft_vault_token_account.mint != *nft_mint.key
+                    || nft_vault_token_account.owner != owner.key()
+                    || nft_vault_token_account.state != AccountState::Initialized
+                {
                     return Err(ErrorCode::InvalidAccounts.into());
                 }
             } else {
@@ -347,7 +353,7 @@ pub mod nft_staking {
                 let nft_vault_account_seeds = &[
                     nft_from_authority.key.as_ref(),
                     nft_mint.key.as_ref(),
-                    &[_nonce_nft_vault[index / 4]],
+                    &[nonce_nft_vault[index / 4]],
                 ];
                 let nft_vault_account_signer = &nft_vault_account_seeds[..];
 
@@ -357,7 +363,10 @@ pub mod nft_staking {
                     account_signer_seeds: nft_vault_account_signer,
                     mint: nft_mint.clone(),
                     owner: owner.to_account_info(),
+                    payer: nft_from_authority.to_account_info(),
+                    system_program: system_program.to_account_info(),
                     token_program: token_program.to_account_info(),
+                    rent: rent.to_account_info(),
                 })?;
             }
 
@@ -419,7 +428,9 @@ pub mod nft_staking {
         _nonce_user_staking: u8,
     ) -> ProgramResult {
         // determine if claimable is empty
-        if ctx.accounts.user_staking_account.claimable.len() > 0 || ctx.accounts.user_staking_account.claimable_aury_amount > 0 {
+        if ctx.accounts.user_staking_account.claimable.len() > 0
+            || ctx.accounts.user_staking_account.claimable_aury_amount > 0
+        {
             return Err(ErrorCode::CantUnstakeBeforeClaim.into());
         }
 
@@ -440,8 +451,7 @@ pub mod nft_staking {
 
         // determine the remaining accounts
         if remaining_accounts_length % 2 != 0
-            || remaining_accounts_length / 2
-                != ctx.accounts.user_staking_account.nft_mint_keys.len()
+            || remaining_accounts_length / 2 > ctx.accounts.user_staking_account.nft_mint_keys.len()
         {
             return Err(ErrorCode::InvalidAccounts.into());
         }
@@ -456,7 +466,7 @@ pub mod nft_staking {
         let mut index = 0;
         while index < remaining_accounts_length {
             let nft_to = Account::<'_, TokenAccount>::try_from(&remaining_accounts[index])?;
-            let nft_vault = Account::<'_, TokenAccount>::try_from(&remaining_accounts[index + 1])?;
+            let mut nft_vault = Account::<'_, TokenAccount>::try_from(&remaining_accounts[index + 1])?;
 
             match ctx
                 .accounts
@@ -483,13 +493,17 @@ pub mod nft_staking {
                     })?;
 
                     // Close nft_vault tokenAccount
-                    spl_close_account(CloseAccountParams {
-                        account: nft_vault.to_account_info(),
-                        destination: nft_to_authority.to_account_info(),
-                        owner: authority.to_account_info(),
-                        owner_signer_seeds: staking_account_signer,
-                        token_program: token_program.to_account_info(),
-                    })?;
+                    (&mut nft_vault).reload()?;
+
+                    if nft_vault.amount == 0 {
+                        spl_close_account(CloseAccountParams {
+                            account: nft_vault.to_account_info(),
+                            destination: nft_to_authority.to_account_info(),
+                            owner: authority.to_account_info(),
+                            owner_signer_seeds: staking_account_signer,
+                            token_program: token_program.to_account_info(),
+                        })?;
+                    }
                 }
                 None => {
                     return Err(ErrorCode::NotStakedItem.into());
@@ -565,18 +579,17 @@ pub mod nft_staking {
         if ctx.accounts.user_staking_account.claimable_aury_amount > 0 {
             // compute aury vault account signer seeds
             let aury_mint_key = ctx.accounts.aury_mint.key();
-            let aury_vault_account_seeds =
-                &[aury_mint_key.as_ref(), &[nonce_aury_vault]];
+            let aury_vault_account_seeds = &[aury_mint_key.as_ref(), &[nonce_aury_vault]];
             let aury_vault_account_signer = &aury_vault_account_seeds[..];
 
             // transfer aury from vault
-            spl_token_transfer(TokenTransferParams { 
+            spl_token_transfer(TokenTransferParams {
                 source: ctx.accounts.aury_vault.to_account_info(),
-                destination: ctx.accounts.aury_to.to_account_info(), 
-                amount: ctx.accounts.user_staking_account.claimable_aury_amount, 
-                authority: ctx.accounts.aury_vault.to_account_info(), 
-                authority_signer_seeds: aury_vault_account_signer, 
-                token_program: ctx.accounts.token_program.to_account_info() 
+                destination: ctx.accounts.aury_to.to_account_info(),
+                amount: ctx.accounts.user_staking_account.claimable_aury_amount,
+                authority: ctx.accounts.aury_vault.to_account_info(),
+                authority_signer_seeds: aury_vault_account_signer,
+                token_program: ctx.accounts.token_program.to_account_info(),
             })?;
 
             ctx.accounts.user_staking_account.claimable_aury_amount = 0;
@@ -649,7 +662,6 @@ pub struct Initialize<'info> {
         seeds = [ constants::AURY_TOKEN_MINT_PUBKEY.parse::<Pubkey>().unwrap().as_ref() ],
         bump = _nonce_aury_vault,
     )]
-    ///the not-yet-created, derived token vault pubkey
     pub aury_vault: Box<Account<'info, TokenAccount>>,
 
     #[account(mut)]
@@ -832,9 +844,8 @@ pub struct AddAuryWinner<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction[_nonce_staking: u8, _nonce_user_staking_counter: u8, _nonce_user_staking: u8]]
+#[instruction[nonce_nft_vault: Vec<u8>, _nonce_staking: u8, _nonce_user_staking_counter: u8, _nonce_user_staking: u8]]
 pub struct Stake<'info> {
-    #[account(mut)]
     pub nft_from_authority: Signer<'info>,
 
     #[account(
@@ -872,7 +883,6 @@ pub struct Stake<'info> {
     )]
     pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
 
-    ///used by anchor for init of the token
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub rent: Sysvar<'info, Rent>,
