@@ -1185,6 +1185,20 @@ describe('nft-staking', () => {
   });
 
   it('Claim failed for not reward', async () => {
+    // Remaining accounts - mint(writable), tokenAccount(writable)
+    let remainingAccounts = [
+      {
+        pubkey: notRewardMintPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userRewardTokenAccount[2],
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
     await assert.rejects(
       async () => {
         await program.rpc.claim(
@@ -1193,13 +1207,12 @@ describe('nft-staking', () => {
           userStakingBump,
           {
             accounts: {
-              nftMint: notRewardMintPubkey,
-              nftTo: userRewardTokenAccount[2],
               nftToAuthority: provider.wallet.publicKey,
               stakingAccount: stakingPubkey,
               userStakingAccount: userStakingPubkey,
               tokenProgram: TOKEN_PROGRAM_ID,
             },
+            remainingAccounts,
           }
         );
       },
@@ -1211,25 +1224,38 @@ describe('nft-staking', () => {
   });
 
   it('Claim the reward', async () => {
+    // Remaining accounts - mint(writable), tokenAccount(writable)
+    let remainingAccounts = [
+      {
+        pubkey: rewardMintPubkey[0],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userRewardTokenAccount[0],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userRewardTokenAccount[1],
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
     await program.rpc.claim(stakingBump, userStakingIndex, userStakingBump, {
       accounts: {
-        nftMint: rewardMintPubkey[0],
-        nftTo: userRewardTokenAccount[0],
         nftToAuthority: provider.wallet.publicKey,
         stakingAccount: stakingPubkey,
         userStakingAccount: userStakingPubkey,
         tokenProgram: TOKEN_PROGRAM_ID,
       },
-    });
-    await program.rpc.claim(stakingBump, userStakingIndex, userStakingBump, {
-      accounts: {
-        nftMint: rewardMintPubkey[1],
-        nftTo: userRewardTokenAccount[1],
-        nftToAuthority: provider.wallet.publicKey,
-        stakingAccount: stakingPubkey,
-        userStakingAccount: userStakingPubkey,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      },
+      remainingAccounts,
     });
 
     assert.equal(await getTokenBalance(userRewardTokenAccount[0]), 2);

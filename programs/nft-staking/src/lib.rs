@@ -571,58 +571,75 @@ pub mod nft_staking {
         Ok(())
     }
 
-    pub fn claim(
-        ctx: Context<Claim>,
+    pub fn claim<'a, 'b, 'c, 'info>(
+        ctx: Context<'a, 'b, 'c, 'info, Claim<'info>>,
         nonce_staking: u8,
         _user_staking_index: u32,
         _nonce_user_staking: u8,
     ) -> ProgramResult {
-        match ctx
-            .accounts
-            .user_staking_account
-            .claimable
-            .iter()
-            .position(|claimable_token| claimable_token.nft_mint == *ctx.accounts.nft_mint.key)
-        {
-            Some(index) => {
-                let claimable_token = ctx.accounts.user_staking_account.claimable[index];
+        // determine the remaining accounts
+        let remaining_accounts = ctx.remaining_accounts;
+        let remaining_accounts_length = ctx.remaining_accounts.len();
 
-                // remove claimed item from user
-                ctx.accounts.user_staking_account.claimable.remove(index);
-
-                // check if claim token is active reward
-                if ctx
-                    .accounts
-                    .staking_account
-                    .active_rewards
-                    .iter()
-                    .find(|&&active_reward| active_reward == claimable_token.nft_mint)
-                    == None
-                {
-                    return Ok(());
-                }
-
-                // compute staking account signer seeds
-                let staking_account_seeds =
-                    &[constants::STAKING_PDA_SEED.as_ref(), &[nonce_staking]];
-                let staking_account_signer = &staking_account_seeds[..];
-
-                // mint claimable amounts to user
-                spl_token_mint(TokenMintParams {
-                    mint: ctx.accounts.nft_mint.to_account_info(),
-                    to: ctx.accounts.nft_to.to_account_info(),
-                    amount: claimable_token.amount as u64,
-                    owner: ctx.accounts.staking_account.to_account_info(),
-                    owner_signer_seeds: staking_account_signer,
-                    token_program: ctx.accounts.token_program.to_account_info(),
-                })?;
-
-                return Ok(());
-            }
-            None => {
-                return Err(ErrorCode::NotClaimableItem.into());
-            }
+        if remaining_accounts_length == 0
+        || remaining_accounts_length % 2 != 0 {
+            return Err(ErrorCode::InvalidAccounts.into());
         }
+
+        let mut index = 0;
+        while index < remaining_accounts_length {
+            let nft_mint = &remaining_accounts[index];
+            let nft_to = Account::<'_, TokenAccount>::try_from(&remaining_accounts[index + 1])?;
+
+            match ctx
+                .accounts
+                .user_staking_account
+                .claimable
+                .iter()
+                .position(|claimable_token| claimable_token.nft_mint == *nft_mint.key)
+            {
+                Some(index) => {
+                    let claimable_token = ctx.accounts.user_staking_account.claimable[index];
+
+                    // remove claimed item from user
+                    ctx.accounts.user_staking_account.claimable.remove(index);
+
+                    // check if claim token is active reward
+                    if ctx
+                        .accounts
+                        .staking_account
+                        .active_rewards
+                        .iter()
+                        .find(|&&active_reward| active_reward == claimable_token.nft_mint)
+                        == None
+                    {
+                        continue;
+                    }
+
+                    // compute staking account signer seeds
+                    let staking_account_seeds =
+                        &[constants::STAKING_PDA_SEED.as_ref(), &[nonce_staking]];
+                    let staking_account_signer = &staking_account_seeds[..];
+
+                    // mint claimable amounts to user
+                    spl_token_mint(TokenMintParams {
+                        mint: nft_mint.clone(),
+                        to: nft_to.to_account_info(),
+                        amount: claimable_token.amount as u64,
+                        owner: ctx.accounts.staking_account.to_account_info(),
+                        owner_signer_seeds: staking_account_signer,
+                        token_program: ctx.accounts.token_program.to_account_info(),
+                    })?;
+                }
+                None => {
+                    return Err(ErrorCode::NotClaimableItem.into());
+                }
+            }
+
+            index += 2;
+        }
+
+        Ok(())
     }
 
     pub fn claim_aury_reward(
@@ -980,12 +997,6 @@ pub struct Unstake<'info> {
 #[derive(Accounts)]
 #[instruction(nonce_staking: u8, _user_staking_index: u32, _nonce_user_staking: u8)]
 pub struct Claim<'info> {
-    #[account(mut)]
-    pub nft_mint: UncheckedAccount<'info>,
-
-    #[account(mut)]
-    pub nft_to: Box<Account<'info, TokenAccount>>,
-
     pub nft_to_authority: Signer<'info>,
 
     #[account(
