@@ -301,32 +301,52 @@ pub mod nft_staking {
     }
 
     #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
-    pub fn add_aury_winner(
-        ctx: Context<AddAuryWinner>,
+    pub fn add_aury_winner<'a, 'b, 'c, 'info>(
+        ctx: Context<'a, 'b, 'c, 'info, AddAuryWinner<'info>>,
         _nonce_staking: u8,
         _nonce_aury_vault: u8,
-        _winner_staking_index: u32,
-        _winner: Pubkey,
-        _nonce_user_staking: u8,
-        aury_amount: u64,
+        winner_staking_index: Vec<u32>,
+        winner: Vec<Pubkey>,
+        aury_amount: Vec<u64>,
     ) -> ProgramResult {
-        // determine if stake is locked
-        if ctx.accounts.user_staking_account.staking_period == 0 {
-            return Err(ErrorCode::StakingNotLocked.into());
+        // determine the remaining accounts
+        let remaining_accounts = ctx.remaining_accounts;
+        let remaining_accounts_length = ctx.remaining_accounts.len();
+
+        if remaining_accounts_length == 0 || remaining_accounts_length != winner_staking_index.len() || remaining_accounts_length != winner.len() || remaining_accounts_length != aury_amount.len() {
+            return Err(ErrorCode::InvalidAccounts.into());
         }
 
-        // transfer aury to the vault
-        spl_token_transfer(TokenTransferParams {
-            source: ctx.accounts.aury_from.to_account_info(),
-            destination: ctx.accounts.aury_vault.to_account_info(),
-            amount: aury_amount,
-            authority: ctx.accounts.admin.to_account_info(),
-            authority_signer_seeds: &[],
-            token_program: ctx.accounts.token_program.to_account_info(),
-        })?;
+        let mut index = 0;
+        while index < remaining_accounts_length {
+            let mut user_staking_account = Account::<'_, UserStakingAccount>::try_from(&remaining_accounts[index])?;
 
-        // update user staking info
-        ctx.accounts.user_staking_account.claimable_aury_amount += aury_amount;
+            // determine if stake is locked
+            if user_staking_account.staking_period == 0 {
+                return Err(ErrorCode::StakingNotLocked.into());
+            }
+
+            // determine user_staking_account pda
+            if user_staking_account.to_account_info().owner != &id() || user_staking_account.index != winner_staking_index[index / 2] || user_staking_account.wallet != winner[index / 2] {
+                return Err(ErrorCode::InvalidAccounts.into());
+            }
+
+            // transfer aury to the vault
+            spl_token_transfer(TokenTransferParams {
+                source: ctx.accounts.aury_from.to_account_info(),
+                destination: ctx.accounts.aury_vault.to_account_info(),
+                amount: aury_amount[index],
+                authority: ctx.accounts.admin.to_account_info(),
+                authority_signer_seeds: &[],
+                token_program: ctx.accounts.token_program.to_account_info(),
+            })?;
+
+            // update user staking info
+            user_staking_account.claimable_aury_amount += aury_amount[index];
+            user_staking_account.exit(&id())?;
+
+            index += 1;
+        }
 
         Ok(())
     }
@@ -830,7 +850,7 @@ pub struct AddWinner<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(_nonce_staking: u8, _nonce_aury_vault: u8, _winner_staking_index: u32, _winner: Pubkey, _nonce_user_staking: u8)]
+#[instruction(_nonce_staking: u8, _nonce_aury_vault: u8)]
 pub struct AddAuryWinner<'info> {
     #[account(
         mut,
@@ -850,13 +870,6 @@ pub struct AddAuryWinner<'info> {
         bump = _nonce_aury_vault,
     )]
     pub aury_vault: Box<Account<'info, TokenAccount>>,
-
-    #[account(
-        mut,
-        seeds = [ _winner_staking_index.to_string().as_ref(), _winner.as_ref() ],
-        bump = _nonce_user_staking,
-    )]
-    pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
 
     #[account(mut)]
     pub aury_from: Box<Account<'info, TokenAccount>>,

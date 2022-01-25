@@ -878,25 +878,40 @@ describe('nft-staking', () => {
   });
 
   it('Add aury winner failed for not locked staking', async () => {
+    // Remaining accounts - userStakingAccount(writable)
+    let remainingAccounts = [
+      {
+        pubkey: userStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    // winnerStakingIndex
+    let winnerStakingIndexes = Buffer.from([userStakingIndex]);
+    // winner
+    let winners = [winner];
+    // auryAmounts
+    let auryAmounts = [userAuryRewardAmount];
+
     await assert.rejects(
       async () => {
         await program.rpc.addAuryWinner(
           stakingBump,
           auryVaultBump,
-          userStakingIndex,
-          winner,
-          userStakingBump,
-          userAuryRewardAmount,
+          winnerStakingIndexes,
+          winners,
+          auryAmounts,
           {
             accounts: {
               stakingAccount: stakingPubkey,
               auryMint: auryMintPubkey,
               auryVault: auryVaultPubkey,
-              userStakingAccount: userStakingPubkey,
               auryFrom: userAuryTokenAccount,
               admin: provider.wallet.publicKey,
               tokenProgram: TOKEN_PROGRAM_ID,
             },
+            remainingAccounts,
           }
         );
       },
@@ -1079,31 +1094,59 @@ describe('nft-staking', () => {
   });
 
   it('Add aury winner success', async () => {
+    // Old balances
     let oldBalance = await getTokenBalance(userAuryTokenAccount);
     let oldUserStakingAccount = await program.account.userStakingAccount.fetch(
       userStakingPubkey
     );
 
+    // Remaining accounts - userStakingAccount(writable)
+    let remainingAccounts = [
+      {
+        pubkey: userStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    // winnerStakingIndex
+    let winnerStakingIndexes = Buffer.from([
+      userStakingIndex,
+      userStakingIndex,
+    ]);
+    // winner
+    let winners = [winner, winner];
+    // auryAmounts
+    let auryAmounts = [
+      userAuryRewardAmount.div(new anchor.BN(2)),
+      userAuryRewardAmount.div(new anchor.BN(2)),
+    ];
+
     await program.rpc.addAuryWinner(
       stakingBump,
       auryVaultBump,
-      userStakingIndex,
-      winner,
-      userStakingBump,
-      userAuryRewardAmount,
+      winnerStakingIndexes,
+      winners,
+      auryAmounts,
       {
         accounts: {
           stakingAccount: stakingPubkey,
           auryMint: auryMintPubkey,
           auryVault: auryVaultPubkey,
-          userStakingAccount: userStakingPubkey,
           auryFrom: userAuryTokenAccount,
           admin: provider.wallet.publicKey,
           tokenProgram: TOKEN_PROGRAM_ID,
         },
+        remainingAccounts,
       }
     );
 
+    // New balances
     let newBalance = await getTokenBalance(userAuryTokenAccount);
     let newUserStakingAccount = await program.account.userStakingAccount.fetch(
       userStakingPubkey
