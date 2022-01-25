@@ -9,6 +9,7 @@ import {
   mintToAccount,
   createTokenAccount,
   createTokenMint,
+  sleep,
 } from './utils';
 import fs from 'fs';
 import dayjs from 'dayjs';
@@ -86,13 +87,13 @@ describe('nft-staking', () => {
   let nftMintPubkey: PublicKey[] = [];
   let nftMetadataPubkey: PublicKey[] = [];
   let nftToken: Token[] = [];
-  let nftCount = 4;
+  let nftCount = 7;
 
   //reward mint and metadata
   let rewardMintPubkey: PublicKey[] = [];
   let rewardMetadataPubkey: PublicKey[] = [];
   let rewardToken: Token[] = [];
-  let rewardCount = 2;
+  let rewardCount = 11;
 
   let notRewardMintPubkey: PublicKey;
 
@@ -119,7 +120,12 @@ describe('nft-staking', () => {
       auryMintPubkey,
       provider.wallet.publicKey
     );
-    await mintToAccount(provider, auryMintPubkey, userAuryTokenAccount, 1000);
+    await mintToAccount(
+      provider,
+      auryMintPubkey,
+      userAuryTokenAccount,
+      1_000_000_000
+    );
   });
 
   it('Prepare NFT that will be staked', async () => {
@@ -1304,6 +1310,8 @@ describe('nft-staking', () => {
   });
 
   it('Unstake success after claim', async () => {
+    await sleep(1000);
+
     // Remaining accounts - mint(writable), vault(writable)
     let remainingAccounts = [
       {
@@ -1477,18 +1485,541 @@ describe('nft-staking', () => {
     );
   });
 
-  it('Mint to', async () => {
-    await program.rpc.mintTo(stakingBump, new anchor.BN(2), {
+  it('Stake - maximum size is 4', async () => {
+    // nftVaultBumps
+    let nftVaultBumps = Buffer.from([
+      nftVaultBump[1],
+      nftVaultBump[2],
+      nftVaultBump[3],
+      nftVaultBump[4],
+    ]);
+
+    // Remaining accounts - mint(readonly), metadata(readonly), tokenAccount(writable), vault(writable)
+    let remainingAccounts = [
+      {
+        pubkey: nftMintPubkey[1],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMetadataPubkey[1],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMintPubkey[2],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMetadataPubkey[2],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[2],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[2],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMintPubkey[3],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMetadataPubkey[3],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[3],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[3],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMintPubkey[4],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nftMetadataPubkey[4],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[4],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[4],
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    await program.rpc.stake(
+      nftVaultBumps,
+      stakingBump,
+      userStakingCounterBump,
+      nextUserStakingBump,
+      {
+        accounts: {
+          nftFromAuthority: provider.wallet.publicKey,
+          stakingAccount: stakingPubkey,
+          userStakingCounterAccount: userStakingCounterPubkey,
+          userStakingAccount: nextUserStakingPubkey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        },
+        remainingAccounts,
+      }
+    );
+  });
+
+  it('Lock the next staking', async () => {
+    await program.rpc.lockStake(
+      stakingBump,
+      userStakingCounterBump,
+      nextUserStakingBump,
+      userStakingPeriod,
+      {
+        accounts: {
+          nftFromAuthority: provider.wallet.publicKey,
+          stakingAccount: stakingPubkey,
+          userStakingCounterAccount: userStakingCounterPubkey,
+          userStakingAccount: nextUserStakingPubkey,
+        },
+      }
+    );
+  });
+
+  it('AddWinner - maximum size is 15', async () => {
+    // Remaining accounts - mint(readonly), userStakingAccount(writable)
+    let remainingAccounts = [
+      {
+        pubkey: rewardMintPubkey[0],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nextUserStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[1],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nextUserStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[2],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nextUserStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[3],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nextUserStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[4],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: nextUserStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    // winnerStakingIndex
+    let winnerStakingIndexes = Buffer.from([
+      nextUserStakingIndex,
+      nextUserStakingIndex,
+      nextUserStakingIndex,
+      nextUserStakingIndex,
+      nextUserStakingIndex,
+    ]);
+    // winner
+    let winners = [winner, winner, winner, winner, winner];
+
+    await program.rpc.addWinner(
+      stakingBump,
+      [
+        ...winnerStakingIndexes,
+        ...winnerStakingIndexes,
+        ...winnerStakingIndexes,
+      ],
+      [...winners, ...winners, ...winners],
+      {
+        accounts: {
+          stakingAccount: stakingPubkey,
+          admin: provider.wallet.publicKey,
+        },
+        remainingAccounts: [
+          ...remainingAccounts,
+          ...remainingAccounts,
+          ...remainingAccounts,
+        ],
+      }
+    );
+  });
+
+  it('AddAuryWinner - maximum size is 12', async () => {
+    // Remaining accounts - userStakingAccount(writable)
+    let remainingAccounts = [
+      {
+        pubkey: nextUserStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nextUserStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nextUserStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nextUserStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    // winnerStakingIndex
+    let winnerStakingIndexes = Buffer.from([
+      nextUserStakingIndex,
+      nextUserStakingIndex,
+      nextUserStakingIndex,
+      nextUserStakingIndex,
+    ]);
+    // winner
+    let winners = [winner, winner, winner, winner];
+    // auryAmounts
+    let auryAmounts = [
+      userAuryRewardAmount,
+      userAuryRewardAmount,
+      userAuryRewardAmount,
+      userAuryRewardAmount,
+    ];
+
+    await program.rpc.addAuryWinner(
+      stakingBump,
+      auryVaultBump,
+      [
+        ...winnerStakingIndexes,
+        ...winnerStakingIndexes,
+        ...winnerStakingIndexes,
+      ],
+      [...winners, ...winners, ...winners],
+      [...auryAmounts, ...auryAmounts, ...auryAmounts],
+      {
+        accounts: {
+          stakingAccount: stakingPubkey,
+          auryMint: auryMintPubkey,
+          auryVault: auryVaultPubkey,
+          auryFrom: userAuryTokenAccount,
+          admin: provider.wallet.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        remainingAccounts: [
+          ...remainingAccounts,
+          ...remainingAccounts,
+          ...remainingAccounts,
+        ],
+      }
+    );
+  });
+
+  it('Claim - maximum size is 5', async () => {
+    // Remaining accounts - mint(writable), tokenAccount(writable)
+    let remainingAccounts = [
+      {
+        pubkey: rewardMintPubkey[0],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userRewardTokenAccount[0],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userRewardTokenAccount[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[2],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userRewardTokenAccount[2],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[3],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userRewardTokenAccount[3],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[4],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userRewardTokenAccount[4],
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    await program.rpc.claim(
+      stakingBump,
+      nextUserStakingIndex,
+      nextUserStakingBump,
+      {
+        accounts: {
+          nftToAuthority: provider.wallet.publicKey,
+          stakingAccount: stakingPubkey,
+          userStakingAccount: nextUserStakingPubkey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        remainingAccounts,
+      }
+    );
+  });
+
+  it('Claim the aury reward', async () => {
+    await program.rpc.claimAuryReward(
+      auryVaultBump,
+      nextUserStakingIndex,
+      nextUserStakingBump,
+      {
+        accounts: {
+          auryMint: auryMintPubkey,
+          auryVault: auryVaultPubkey,
+          auryTo: userAuryTokenAccount,
+          auryToAuthority: provider.wallet.publicKey,
+          userStakingAccount: nextUserStakingPubkey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+      }
+    );
+  });
+
+  it('Unstake - maximum size is 5', async () => {
+    await sleep(1000);
+
+    // Remaining accounts - mint(writable), vault(writable)
+    let remainingAccounts = [
+      {
+        pubkey: userNFTTokenAccount[0],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[0],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[2],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[2],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[3],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[3],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: userNFTTokenAccount[4],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: nftVaultPubkey[4],
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    await program.rpc.unstake(
+      stakingBump,
+      nextUserStakingIndex,
+      nextUserStakingBump,
+      {
+        accounts: {
+          nftToAuthority: provider.wallet.publicKey,
+          stakingAccount: stakingPubkey,
+          userStakingAccount: nextUserStakingPubkey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        remainingAccounts,
+      }
+    );
+  });
+
+  it('RemoveReward - maximum size is 10', async () => {
+    // Remaining accounts - mint(writable)
+    let remainingAccounts = [
+      {
+        pubkey: rewardMintPubkey[0],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[1],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[2],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[3],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[4],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[5],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[6],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[7],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[8],
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[9],
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    await program.rpc.removeReward(stakingBump, {
       accounts: {
-        nftMint: rewardMintPubkey[1],
-        nftTo: userRewardTokenAccount[1],
+        stakingAccount: stakingPubkey,
+        nftMintAuthorityTo: provider.wallet.publicKey,
+        admin: provider.wallet.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      },
+      remainingAccounts,
+    });
+  });
+
+  it('Mint to', async () => {
+    // Old balance
+    let oldBalance = await getTokenBalance(userRewardTokenAccount[10]);
+
+    let amount = 2;
+    await program.rpc.mintTo(stakingBump, new anchor.BN(amount), {
+      accounts: {
+        nftMint: rewardMintPubkey[10],
+        nftTo: userRewardTokenAccount[10],
         stakingAccount: stakingPubkey,
         admin: provider.wallet.publicKey,
         tokenProgram: TOKEN_PROGRAM_ID,
       },
     });
 
-    assert.equal(await getTokenBalance(userRewardTokenAccount[1]), 3);
+    assert.equal(
+      await getTokenBalance(userRewardTokenAccount[10]),
+      oldBalance + amount
+    );
   });
 });
 
