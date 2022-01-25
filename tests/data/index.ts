@@ -1,8 +1,8 @@
 import { PublicKey } from '@solana/web3.js';
 
-export const nft_data = (creator: PublicKey) => {
+export const nft_data = (creator: PublicKey, name: string) => {
   return {
-    name: 'Helios 3D',
+    name: name,
     symbol: '',
     description: 'Helios artwork for Aurorians and some $AURY holders',
     seller_fee_basis_points: 1000,
