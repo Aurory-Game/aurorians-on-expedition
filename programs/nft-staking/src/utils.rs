@@ -258,16 +258,17 @@ pub fn assert_metadata_valid<'info>(
     let metadata = Metadata::from_account_info(&nft_metadata)?;
 
     // determine authorized name start
-    if staking_account
-        .authorized_name_starts
-        .iter()
-        .find(|&authorized_name_start| {
-            metadata
-                .data
-                .name
-                .starts_with(&authorized_name_start.to_string())
-        })
-        == None
+    if staking_account.authorized_name_starts.len() > 0
+        && staking_account
+            .authorized_name_starts
+            .iter()
+            .find(|&authorized_name_start| {
+                metadata
+                    .data
+                    .name
+                    .starts_with(&authorized_name_start.to_string())
+            })
+            == None
     {
         return Err(ErrorCode::NoAuthorizedNameStartFoundInMetadata.into());
     }
