@@ -836,20 +836,37 @@ describe('nft-staking', () => {
   });
 
   it('Add winner failed for not locked staking', async () => {
+    // Remaining accounts - mint(readonly), userStakingAccount(writable)
+    let remainingAccounts = [
+      {
+        pubkey: rewardMintPubkey[0],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    // winnerStakingIndex
+    let winnerStakingIndexes = Buffer.from([userStakingIndex]);
+    // winner
+    let winners = [winner];
+
     await assert.rejects(
       async () => {
         await program.rpc.addWinner(
           stakingBump,
-          userStakingIndex,
-          winner,
-          userStakingBump,
+          winnerStakingIndexes,
+          winners,
           {
             accounts: {
-              nftMint: rewardMintPubkey[0],
               stakingAccount: stakingPubkey,
-              userStakingAccount: userStakingPubkey,
               admin: provider.wallet.publicKey,
             },
+            remainingAccounts,
           }
         );
       },
@@ -956,20 +973,37 @@ describe('nft-staking', () => {
   });
 
   it('Add winner failed with not reward nft', async () => {
+    // Remaining accounts - mint(readonly), userStakingAccount(writable)
+    let remainingAccounts = [
+      {
+        pubkey: notRewardMintPubkey,
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    // winnerStakingIndex
+    let winnerStakingIndexes = Buffer.from([userStakingIndex]);
+    // winner
+    let winners = [winner];
+
     await assert.rejects(
       async () => {
         await program.rpc.addWinner(
           stakingBump,
-          userStakingIndex,
-          winner,
-          userStakingBump,
+          winnerStakingIndexes,
+          winners,
           {
             accounts: {
-              nftMint: notRewardMintPubkey,
               stakingAccount: stakingPubkey,
-              userStakingAccount: userStakingPubkey,
               admin: provider.wallet.publicKey,
             },
+            remainingAccounts,
           }
         );
       },
@@ -981,48 +1015,56 @@ describe('nft-staking', () => {
   });
 
   it('Add winner success with right reward nft', async () => {
-    await program.rpc.addWinner(
-      stakingBump,
-      userStakingIndex,
-      winner,
-      userStakingBump,
+    // Remaining accounts - mint(readonly), userStakingAccount(writable)
+    let remainingAccounts = [
       {
-        accounts: {
-          nftMint: rewardMintPubkey[0],
-          stakingAccount: stakingPubkey,
-          userStakingAccount: userStakingPubkey,
-          admin: provider.wallet.publicKey,
-        },
-      }
-    );
-    await program.rpc.addWinner(
-      stakingBump,
-      userStakingIndex,
-      winner,
-      userStakingBump,
+        pubkey: rewardMintPubkey[0],
+        isWritable: false,
+        isSigner: false,
+      },
       {
-        accounts: {
-          nftMint: rewardMintPubkey[0],
-          stakingAccount: stakingPubkey,
-          userStakingAccount: userStakingPubkey,
-          admin: provider.wallet.publicKey,
-        },
-      }
-    );
-    await program.rpc.addWinner(
-      stakingBump,
-      userStakingIndex,
-      winner,
-      userStakingBump,
+        pubkey: userStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
       {
-        accounts: {
-          nftMint: rewardMintPubkey[1],
-          stakingAccount: stakingPubkey,
-          userStakingAccount: userStakingPubkey,
-          admin: provider.wallet.publicKey,
-        },
-      }
-    );
+        pubkey: rewardMintPubkey[0],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+      {
+        pubkey: rewardMintPubkey[1],
+        isWritable: false,
+        isSigner: false,
+      },
+      {
+        pubkey: userStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
+    ];
+
+    // winnerStakingIndex
+    let winnerStakingIndexes = Buffer.from([
+      userStakingIndex,
+      userStakingIndex,
+      userStakingIndex,
+    ]);
+    // winner
+    let winners = [winner, winner, winner];
+
+    await program.rpc.addWinner(stakingBump, winnerStakingIndexes, winners, {
+      accounts: {
+        stakingAccount: stakingPubkey,
+        admin: provider.wallet.publicKey,
+      },
+      remainingAccounts,
+    });
 
     const userStakingAccount = await program.account.userStakingAccount.fetch(
       userStakingPubkey

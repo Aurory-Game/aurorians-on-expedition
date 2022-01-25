@@ -180,7 +180,10 @@ pub mod nft_staking {
     }
 
     #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
-    pub fn remove_reward<'a, 'b, 'c, 'info>(ctx: Context<'a, 'b, 'c, 'info, RemoveReward<'info>>, nonce_staking: u8) -> ProgramResult {
+    pub fn remove_reward<'a, 'b, 'c, 'info>(
+        ctx: Context<'a, 'b, 'c, 'info, RemoveReward<'info>>, 
+        nonce_staking: u8
+    ) -> ProgramResult {
         // determine the remaining accounts
         let remaining_accounts = ctx.remaining_accounts;
         let remaining_accounts_length = ctx.remaining_accounts.len();
@@ -231,49 +234,67 @@ pub mod nft_staking {
     }
 
     #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
-    pub fn add_winner(
-        ctx: Context<AddWinner>,
+    pub fn add_winner<'a, 'b, 'c, 'info>(
+        ctx: Context<'a, 'b, 'c, 'info, AddWinner<'info>>,
         _nonce_staking: u8,
-        _winner_staking_index: u32,
-        _winner: Pubkey,
-        _nonce_user_staking: u8,
+        winner_staking_index: Vec<u32>,
+        winner: Vec<Pubkey>
     ) -> ProgramResult {
-        // determine if stake is locked
-        if ctx.accounts.user_staking_account.staking_period == 0 {
-            return Err(ErrorCode::StakingNotLocked.into());
+        // determine the remaining accounts
+        let remaining_accounts = ctx.remaining_accounts;
+        let remaining_accounts_length = ctx.remaining_accounts.len();
+
+        if remaining_accounts_length % 2 != 0 || remaining_accounts_length / 2 != winner_staking_index.len() || remaining_accounts_length / 2 != winner.len() {
+            return Err(ErrorCode::InvalidAccounts.into());
         }
 
-        // Check if nft is one of the rewards
-        if ctx
-            .accounts
-            .staking_account
-            .active_rewards
-            .iter()
-            .find(|&active_reward| active_reward == ctx.accounts.nft_mint.key)
-            == None
-        {
-            return Err(ErrorCode::InvalidMintForReward.into());
-        }
+        let mut index = 0;
+        while index < remaining_accounts_length {
+            let nft_mint = &remaining_accounts[index];
+            let mut user_staking_account = Account::<'_, UserStakingAccount>::try_from(&remaining_accounts[index + 1])?;
 
-        match ctx
-            .accounts
-            .user_staking_account
-            .claimable
-            .iter()
-            .position(|claimable_token| claimable_token.nft_mint == *ctx.accounts.nft_mint.key)
-        {
-            Some(index) => {
-                ctx.accounts.user_staking_account.claimable[index].amount += 1;
+            // determine if stake is locked
+            if user_staking_account.staking_period == 0 {
+                return Err(ErrorCode::StakingNotLocked.into());
             }
-            None => {
-                ctx.accounts
-                    .user_staking_account
-                    .claimable
-                    .push(ClaimableToken {
-                        nft_mint: *ctx.accounts.nft_mint.key,
-                        amount: 1,
-                    });
+
+            // determine user_staking_account pda
+            if user_staking_account.to_account_info().owner != &id() || user_staking_account.index != winner_staking_index[index / 2] || user_staking_account.wallet != winner[index / 2] {
+                return Err(ErrorCode::InvalidAccounts.into());
             }
+
+            // Check if nft is one of the rewards
+            if ctx
+                .accounts
+                .staking_account
+                .active_rewards
+                .iter()
+                .find(|&active_reward| active_reward == nft_mint.key)
+                == None
+            {
+                return Err(ErrorCode::InvalidMintForReward.into());
+            }
+
+            match user_staking_account
+                .claimable
+                .iter()
+                .position(|claimable_token| claimable_token.nft_mint == *nft_mint.key)
+            {
+                Some(index) => {
+                    user_staking_account.claimable[index].amount += 1;
+                }
+                None => {
+                    user_staking_account
+                        .claimable
+                        .push(ClaimableToken {
+                            nft_mint: *nft_mint.key,
+                            amount: 1,
+                        });
+                }
+            }
+            user_staking_account.exit(&id())?;
+
+            index += 2;
         }
 
         Ok(())
@@ -796,23 +817,14 @@ pub struct RemoveReward<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(_nonce_staking: u8, _winner_staking_index: u32, _winner: Pubkey, _nonce_user_staking: u8)]
+#[instruction(_nonce_staking: u8)]
 pub struct AddWinner<'info> {
-    pub nft_mint: UncheckedAccount<'info>,
-
     #[account(
         mut,
         seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
         bump = _nonce_staking,
     )]
     pub staking_account: Box<Account<'info, StakingAccount>>,
-
-    #[account(
-        mut,
-        seeds = [ _winner_staking_index.to_string().as_ref(), _winner.as_ref() ],
-        bump = _nonce_user_staking,
-    )]
-    pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
 
     pub admin: Signer<'info>,
 }
