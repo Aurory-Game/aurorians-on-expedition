@@ -236,10 +236,9 @@ pub fn assert_metadata_valid<'info>(
     nft_metadata: &AccountInfo,
     mint: &Pubkey,
     staking_account: Box<Account<StakingAccount>>,
-    program_id: &Pubkey,
 ) -> ProgramResult {
     // determine metaplex program id
-    assert_owned_by(nft_metadata, program_id)?;
+    assert_owned_by(nft_metadata, &metaplex_token_metadata::id())?;
 
     // determine metadata mint
     assert_derivation(

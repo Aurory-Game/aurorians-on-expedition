@@ -10,7 +10,6 @@ declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 #[cfg(not(feature = "local-testing"))]
 pub mod constants {
     pub const AURY_TOKEN_MINT_PUBKEY: &str = "AURYydfxJib1ZkTir1Jn1J9ECYUtjb6rKQVmtYaixWPP";
-    pub const METAPLEX_PROGRAM_ID: &str = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
     pub const STAKING_PDA_SEED: &[u8] = b"nft_staking";
     pub const AAA: &[u8] = b"0";
 }
@@ -18,7 +17,6 @@ pub mod constants {
 #[cfg(feature = "local-testing")]
 pub mod constants {
     pub const AURY_TOKEN_MINT_PUBKEY: &str = "teST1ieLrLdr4MJPZ7i8mgSCLQ7rTrPRjNnyFdHFaz9";
-    pub const METAPLEX_PROGRAM_ID: &str = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
     pub const STAKING_PDA_SEED: &[u8] = b"nft_staking";
     pub const AAA: &[u8] = b"0";
 }
@@ -179,6 +177,7 @@ pub mod nft_staking {
         Ok(())
     }
 
+    // maximum size is 10
     #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
     pub fn remove_reward<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, RemoveReward<'info>>, 
@@ -233,6 +232,7 @@ pub mod nft_staking {
         Ok(())
     }
 
+    // maximum size is 15
     #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
     pub fn add_winner<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, AddWinner<'info>>,
@@ -300,6 +300,7 @@ pub mod nft_staking {
         Ok(())
     }
 
+    // maximum size is 12
     #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
     pub fn add_aury_winner<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, AddAuryWinner<'info>>,
@@ -351,6 +352,7 @@ pub mod nft_staking {
         Ok(())
     }
 
+    // maximum size is 4
     pub fn stake<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, Stake<'info>>,
         nonce_nft_vault: Vec<u8>,
@@ -389,7 +391,6 @@ pub mod nft_staking {
                 nft_metadata,
                 nft_mint.key,
                 ctx.accounts.staking_account.clone(),
-                &constants::METAPLEX_PROGRAM_ID.parse::<Pubkey>().unwrap()
             )?;
 
             // init if needed nft vault
@@ -476,6 +477,7 @@ pub mod nft_staking {
         Ok(())
     }
 
+    // maximum size is 5
     pub fn unstake<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, Unstake<'info>>,
         nonce_staking: u8,
@@ -571,6 +573,7 @@ pub mod nft_staking {
         Ok(())
     }
 
+    // maximum size is 5
     pub fn claim<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, Claim<'info>>,
         nonce_staking: u8,
