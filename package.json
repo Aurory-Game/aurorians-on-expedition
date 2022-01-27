@@ -15,6 +15,10 @@
     "mocha": "^9.0.3",
     "ts-mocha": "^8.0.0",
     "ts-node": "^10.2.1",
+    "dayjs": "^1.10.7",
     "typescript": "^4.3.5"
+  },
+  "scripts": {
+    "postinstall": "git submodule init && git submodule update && cd deps/metaplex && git checkout cbb590d53a3a9718ecf2b526580952fc6d10baaf && cd rust/token-metadata/program && cargo build-bpf"
   }
 }
