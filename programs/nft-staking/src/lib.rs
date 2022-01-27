@@ -300,7 +300,7 @@ pub mod nft_staking {
         Ok(())
     }
 
-    // maximum size is 12
+    // maximum size is 10
     #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
     pub fn add_aury_winner<'a, 'b, 'c, 'info>(
         ctx: Context<'a, 'b, 'c, 'info, AddAuryWinner<'info>>,

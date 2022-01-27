@@ -1703,9 +1703,14 @@ describe('nft-staking', () => {
     );
   });
 
-  it('AddAuryWinner - maximum size is 12', async () => {
+  it('AddAuryWinner - maximum size is 10', async () => {
     // Remaining accounts - userStakingAccount(writable)
     let remainingAccounts = [
+      {
+        pubkey: nextUserStakingPubkey,
+        isWritable: true,
+        isSigner: false,
+      },
       {
         pubkey: nextUserStakingPubkey,
         isWritable: true,
@@ -1734,11 +1739,13 @@ describe('nft-staking', () => {
       nextUserStakingIndex,
       nextUserStakingIndex,
       nextUserStakingIndex,
+      nextUserStakingIndex,
     ]);
     // winner
-    let winners = [winner, winner, winner, winner];
+    let winners = [winner, winner, winner, winner, winner];
     // auryAmounts
     let auryAmounts = [
+      userAuryRewardAmount,
       userAuryRewardAmount,
       userAuryRewardAmount,
       userAuryRewardAmount,
@@ -1748,13 +1755,9 @@ describe('nft-staking', () => {
     await program.rpc.addAuryWinner(
       stakingBump,
       auryVaultBump,
-      [
-        ...winnerStakingIndexes,
-        ...winnerStakingIndexes,
-        ...winnerStakingIndexes,
-      ],
-      [...winners, ...winners, ...winners],
-      [...auryAmounts, ...auryAmounts, ...auryAmounts],
+      [...winnerStakingIndexes, ...winnerStakingIndexes],
+      [...winners, ...winners],
+      [...auryAmounts, ...auryAmounts],
       {
         accounts: {
           stakingAccount: stakingPubkey,
@@ -1764,11 +1767,7 @@ describe('nft-staking', () => {
           admin: provider.wallet.publicKey,
           tokenProgram: TOKEN_PROGRAM_ID,
         },
-        remainingAccounts: [
-          ...remainingAccounts,
-          ...remainingAccounts,
-          ...remainingAccounts,
-        ],
+        remainingAccounts: [...remainingAccounts, ...remainingAccounts],
       }
     );
   });
