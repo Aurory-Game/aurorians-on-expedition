@@ -1389,10 +1389,15 @@ describe('nft-staking', () => {
       );
     }
 
-    const userStakingAccount = await program.account.userStakingAccount.fetch(
-      userStakingPubkey
+    await assert.rejects(
+      async () => {
+        await program.account.userStakingAccount.fetch(userStakingPubkey);
+      },
+      {
+        message: 'Account does not exist ' + userStakingPubkey.toString(),
+      }
     );
-    assert.equal(userStakingAccount.nftMintKeys.toString(), [].toString());
+    // assert.equal(userStakingAccount.nftMintKeys.toString(), [].toString());
   });
 
   it('Next stake success with empty-authorized-name-starts', async () => {

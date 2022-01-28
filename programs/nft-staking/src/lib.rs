@@ -1,7 +1,7 @@
 pub mod utils;
 
 use crate::utils::*;
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::*, AccountsClose};
 use anchor_spl::token::{Mint, Token, TokenAccount};
 use spl_token::{instruction::AuthorityType, state::AccountState};
 
@@ -11,14 +11,12 @@ declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 pub mod constants {
     pub const AURY_TOKEN_MINT_PUBKEY: &str = "AURYydfxJib1ZkTir1Jn1J9ECYUtjb6rKQVmtYaixWPP";
     pub const STAKING_PDA_SEED: &[u8] = b"nft_staking";
-    pub const AAA: &[u8] = b"0";
 }
 
 #[cfg(feature = "local-testing")]
 pub mod constants {
     pub const AURY_TOKEN_MINT_PUBKEY: &str = "teST1ieLrLdr4MJPZ7i8mgSCLQ7rTrPRjNnyFdHFaz9";
     pub const STAKING_PDA_SEED: &[u8] = b"nft_staking";
-    pub const AAA: &[u8] = b"0";
 }
 
 #[program]
@@ -568,6 +566,11 @@ pub mod nft_staking {
             }
 
             index += 2;
+        }
+
+        // close account if it's empty
+        if ctx.accounts.user_staking_account.nft_mint_keys.len() == 0 {
+            ctx.accounts.user_staking_account.close(ctx.accounts.nft_to_authority.to_account_info())?;
         }
 
         Ok(())
