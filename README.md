@@ -1,5 +1,5 @@
-# NFT-POOL
+# Aurorians on expedition
 
 ## Description
 
-This program allows NFTs deposit in a pool.
+TODO
