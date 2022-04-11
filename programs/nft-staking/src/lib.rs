@@ -451,7 +451,9 @@ pub mod nft_staking {
         _nonce_staking: u8,
         _nonce_user_staking_counter: u8,
         _nonce_user_staking: u8,
+        _nonce_aury_vault: u8,
         staking_period: u64,
+        aury_amount: u64,
     ) -> ProgramResult {
         // determine if stake is locked
         if ctx.accounts.user_staking_account.staking_period > 0 {
@@ -471,6 +473,22 @@ pub mod nft_staking {
         ctx.accounts.user_staking_account.staking_at = Clock::get()?.unix_timestamp as u64;
         ctx.accounts.user_staking_account.staking_period = staking_period;
         ctx.accounts.user_staking_counter_account.counter += 1;
+
+        if aury_amount != 0 {
+            // transfer aury to the vault
+            spl_token_transfer(TokenTransferParams {
+                source: ctx.accounts.aury_from.to_account_info(),
+                destination: ctx.accounts.aury_vault.to_account_info(),
+                amount: aury_amount,
+                authority: ctx.accounts.nft_from_authority.to_account_info(),
+                authority_signer_seeds: &[],
+                token_program: ctx.accounts.token_program.to_account_info(),
+            })?;
+
+            // update user staking info
+            ctx.accounts.user_staking_account.aury_deposit = aury_amount;
+        }
+        
 
         Ok(())
     }
@@ -932,13 +950,14 @@ pub struct Stake<'info> {
         // 4: index
         // 32: wallet
         // 4: nft_mint_keys Vec's length
-        // 32 * 150: nft_mint_keys limit 150
+        // 32 * 10: nft_mint_keys limit 10
         // 4: claimable Vec's length
-        // (32 + 2) * 150: claimable limit 150
+        // (32 + 2) * 5: claimable limit 5
         // 8: staking_at
         // 8: staking_period
         // 8: claimable aury amount
-        space = 8 + 4 + 32 + 4 + 32 * 150 + 4 + (32 + 2) * 150 + 8 + 8 + 8, 
+        // 8: aury_deposit
+        space = 8 + 4 + 32 + 4 + 32 * 10 + 4 + (32 + 2) * 5 + 8 + 8 + 8 + 8, 
     )]
     pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
 
@@ -948,7 +967,7 @@ pub struct Stake<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(_nonce_staking: u8, _nonce_user_staking_counter: u8, _nonce_user_staking: u8)]
+#[instruction(_nonce_staking: u8, _nonce_user_staking_counter: u8, _nonce_user_staking: u8, _nonce_aury_vault: u8)]
 pub struct LockStake<'info> {
     #[account(mut)]
     pub nft_from_authority: Signer<'info>,
@@ -974,6 +993,22 @@ pub struct LockStake<'info> {
         bump = _nonce_user_staking,
     )]
     pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
+    #[account(
+        address = constants::AURY_TOKEN_MINT_PUBKEY.parse::<Pubkey>().unwrap(),
+    )]
+    pub aury_mint: Box<Account<'info, Mint>>,
+
+    #[account(
+        mut,
+        seeds = [ aury_mint.key().as_ref() ],
+        bump = _nonce_aury_vault,
+    )]
+    pub aury_vault: Box<Account<'info, TokenAccount>>,
+
+    #[account(mut)]
+    pub aury_from: Box<Account<'info, TokenAccount>>,
+
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
@@ -1109,6 +1144,7 @@ pub struct UserStakingAccount {
     pub staking_at: u64,
     pub staking_period: u64,
     pub claimable_aury_amount: u64,
+    pub aury_deposit: u64,
 }
 
 #[error]

@@ -55,6 +55,7 @@ describe('nft-staking', () => {
 
   let minimumStakingPeriod = new anchor.BN(1);
   let maximumStakingPeriod = new anchor.BN(20);
+  let auryDepositAmount = new anchor.BN(1e9);
 
   //winner
   let winner = provider.wallet.publicKey;
@@ -124,7 +125,7 @@ describe('nft-staking', () => {
       provider,
       auryMintPubkey,
       userAuryTokenAccount,
-      1_000_000_000
+      50 * 1e9 // 50 aury
     );
   });
 
@@ -836,13 +837,19 @@ describe('nft-staking', () => {
           stakingBump,
           userStakingCounterBump,
           userStakingBump,
+          auryVaultBump,
           invalidStakingPeriod,
+          auryDepositAmount,
           {
             accounts: {
               nftFromAuthority: provider.wallet.publicKey,
               stakingAccount: stakingPubkey,
               userStakingCounterAccount: userStakingCounterPubkey,
               userStakingAccount: userStakingPubkey,
+              auryMint: auryMintPubkey,
+              auryVault: auryVaultPubkey,
+              auryFrom: userAuryTokenAccount,
+              tokenProgram: TOKEN_PROGRAM_ID,
             },
           }
         );
@@ -943,18 +950,25 @@ describe('nft-staking', () => {
 
   it('Lock stake success with valid staking period', async () => {
     let userStakingAtFloor = dayjs().unix() - 1;
+    const oldAuryVaultBalance = await getTokenBalance(auryVaultPubkey);
 
     await program.rpc.lockStake(
       stakingBump,
       userStakingCounterBump,
       userStakingBump,
+      auryVaultBump,
       userStakingPeriod,
+      auryDepositAmount,
       {
         accounts: {
           nftFromAuthority: provider.wallet.publicKey,
           stakingAccount: stakingPubkey,
           userStakingCounterAccount: userStakingCounterPubkey,
           userStakingAccount: userStakingPubkey,
+          auryMint: auryMintPubkey,
+          auryVault: auryVaultPubkey,
+          auryFrom: userAuryTokenAccount,
+          tokenProgram: TOKEN_PROGRAM_ID,
         },
       }
     );
@@ -970,6 +984,8 @@ describe('nft-staking', () => {
     let userStakingAccount = await program.account.userStakingAccount.fetch(
       userStakingPubkey
     );
+
+    console.log(userStakingAccount)
     assert.equal(
       userStakingAccount.stakingPeriod.toNumber(),
       userStakingPeriod.toNumber()
@@ -980,6 +996,12 @@ describe('nft-staking', () => {
     expect(userStakingAccount.stakingAt.toNumber()).to.be.at.most(
       userStakingAtCeil
     );
+    assert.equal(
+      userStakingAccount.auryDeposit.toNumber(),
+      auryDepositAmount.toNumber()
+    )
+    assert.equal(await getTokenBalance(auryVaultPubkey), auryDepositAmount.addn(oldAuryVaultBalance));
+
   });
 
   it('Unstake failed for locked staking', async () => {
@@ -1608,13 +1630,19 @@ describe('nft-staking', () => {
       stakingBump,
       userStakingCounterBump,
       nextUserStakingBump,
+      auryVaultBump,
       userStakingPeriod,
+      auryDepositAmount,
       {
         accounts: {
           nftFromAuthority: provider.wallet.publicKey,
           stakingAccount: stakingPubkey,
           userStakingCounterAccount: userStakingCounterPubkey,
           userStakingAccount: nextUserStakingPubkey,
+          auryMint: auryMintPubkey,
+          auryVault: auryVaultPubkey,
+          auryFrom: userAuryTokenAccount,
+          tokenProgram: TOKEN_PROGRAM_ID,
         },
       }
     );
