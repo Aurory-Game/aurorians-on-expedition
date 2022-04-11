@@ -1,4 +1,5 @@
-use anchor_lang::{prelude::*, solana_program::program_pack::Pack};
+use anchor_lang::{prelude::*, solana_program::program_pack::Pack, __private::CLOSED_ACCOUNT_DISCRIMINATOR, __private::ErrorCode::AccountDidNotSerialize};
+use std::io::Write;
 use metaplex_token_metadata::state::Metadata;
 use spl_token::instruction::AuthorityType;
 use {
@@ -362,4 +363,21 @@ pub fn create_pda_account<'a>(
             &[new_pda_signer_seeds],
         )
     }
+}
+
+pub fn close<'info>(info: AccountInfo<'info>, sol_destination: AccountInfo<'info>) -> ProgramResult {
+    // Transfer tokens from the account to the sol_destination.
+    let dest_starting_lamports = sol_destination.lamports();
+    **sol_destination.lamports.borrow_mut() =
+        dest_starting_lamports.checked_add(info.lamports()).unwrap();
+    **info.lamports.borrow_mut() = 0;
+
+    // Mark the account discriminator as closed.
+    let mut data = info.try_borrow_mut_data()?;
+    let dst: &mut [u8] = &mut data;
+    let mut cursor = std::io::Cursor::new(dst);
+    cursor
+        .write_all(&CLOSED_ACCOUNT_DISCRIMINATOR)
+        .map_err(|_| AccountDidNotSerialize)?;
+    Ok(())
 }

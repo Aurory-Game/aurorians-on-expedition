@@ -588,7 +588,8 @@ pub mod nft_staking {
 
         // close account if it's empty
         if ctx.accounts.user_staking_account.nft_mint_keys.len() == 0 {
-            ctx.accounts.user_staking_account.close(ctx.accounts.nft_to_authority.to_account_info())?;
+            // ctx.accounts.user_staking_account.close(ctx.accounts.nft_to_authority.to_account_info())?;
+            close(ctx.accounts.user_staking_account.to_account_info(), ctx.accounts.nft_to_authority.to_account_info())?;
         }
 
         Ok(())
