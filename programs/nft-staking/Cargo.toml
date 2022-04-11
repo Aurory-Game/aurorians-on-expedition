@@ -22,3 +22,4 @@ anchor-lang = "0.19.0"
 anchor-spl = "0.19.0"
 spl-token = { version = "3.3.0", features = ["no-entrypoint"] }
 metaplex-token-metadata = {  version = "0.0.1", features = ["no-entrypoint"] }
+arrayref = "0.3.6"

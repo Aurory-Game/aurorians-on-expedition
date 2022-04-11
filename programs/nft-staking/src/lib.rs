@@ -1,9 +1,10 @@
 pub mod utils;
 
 use crate::utils::*;
-use anchor_lang::{prelude::*, AccountsClose};
-use anchor_spl::token::{Mint, Token, TokenAccount};
+use anchor_lang::{prelude::*, Discriminator};
+use anchor_spl::token::{Mint, Token, TokenAccount,};
 use spl_token::{instruction::AuthorityType, state::AccountState};
+use arrayref::array_ref;
 
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 
@@ -358,6 +359,25 @@ pub mod nft_staking {
         _nonce_user_staking_counter: u8,
         _nonce_user_staking: u8,
     ) -> ProgramResult {
+        //init_if_needed safety check
+        {
+            let acct = ctx.accounts.user_staking_counter_account.to_account_info();
+            let data: &[u8] = &acct.try_borrow_data()?;
+            let disc_bytes = array_ref![data, 0, 8];
+            if disc_bytes != &UserStakingCounterAccount::discriminator() && disc_bytes.iter().any(|a| a != &0) {
+                return Err(ErrorCode::AccountDiscriminatorMismatch.into());
+            }
+        }
+
+        {
+            let acct = ctx.accounts.user_staking_account.to_account_info();
+            let data: &[u8] = &acct.try_borrow_data()?;
+            let disc_bytes = array_ref![data, 0, 8];
+            if disc_bytes != &UserStakingAccount::discriminator() && disc_bytes.iter().any(|a| a != &0) {
+                return Err(ErrorCode::AccountDiscriminatorMismatch.into());
+            }
+        }
+
         // determine if stake is locked
         if ctx.accounts.user_staking_account.staking_period > 0 {
             return Err(ErrorCode::StakingLocked.into());
@@ -1188,6 +1208,8 @@ pub enum ErrorCode {
     StakingNotLocked, // 6017, 0x1781
     #[msg("Incorrect owner")]
     IncorrectOwner, // 6018, 0x1782
+    #[msg("8 byte discriminator did not match what was expected")]
+    AccountDiscriminatorMismatch, // 6019, 0x1783
 }
 
 // Asserts the signer is admin

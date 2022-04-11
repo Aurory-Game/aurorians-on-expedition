@@ -1,4 +1,8 @@
-use anchor_lang::{prelude::*, solana_program::program_pack::Pack, __private::CLOSED_ACCOUNT_DISCRIMINATOR, __private::ErrorCode::AccountDidNotSerialize};
+use anchor_lang::{
+    prelude::*,
+    solana_program::program_pack::Pack, __private::CLOSED_ACCOUNT_DISCRIMINATOR,
+    __private::ErrorCode::AccountDidNotSerialize
+};
 use std::io::Write;
 use metaplex_token_metadata::state::Metadata;
 use spl_token::instruction::AuthorityType;
