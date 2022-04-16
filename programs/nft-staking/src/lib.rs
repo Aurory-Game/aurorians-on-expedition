@@ -6,9 +6,14 @@ use anchor_spl::token::{Mint, Token, TokenAccount,};
 use spl_token::{instruction::AuthorityType, state::AccountState};
 use arrayref::array_ref;
 
+#[cfg(all(not(feature = "local-testing"), not(feature = "aurorynet")))]
+declare_id!("AoEJc7sKCPJWxVPPiaoAzBNR9Z47kVfYeiwvTdkMLcQ7");
+#[cfg(feature = "local-testing")]
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+#[cfg(feature = "aurorynet")]
+declare_id!("FAoe56PmccajBhQ8h5F7vp4RMEY3D3xogqXXBDb83MHF");
 
-#[cfg(not(feature = "local-testing"))]
+#[cfg(all(not(feature = "local-testing"), not(feature = "aurorynet")))]
 pub mod constants {
     pub const AURY_TOKEN_MINT_PUBKEY: &str = "AURYydfxJib1ZkTir1Jn1J9ECYUtjb6rKQVmtYaixWPP";
     pub const STAKING_PDA_SEED: &[u8] = b"nft_staking";
@@ -17,6 +22,12 @@ pub mod constants {
 #[cfg(feature = "local-testing")]
 pub mod constants {
     pub const AURY_TOKEN_MINT_PUBKEY: &str = "teST1ieLrLdr4MJPZ7i8mgSCLQ7rTrPRjNnyFdHFaz9";
+    pub const STAKING_PDA_SEED: &[u8] = b"nft_staking";
+}
+
+#[cfg(feature = "aurorynet")]
+pub mod constants {
+    pub const AURY_TOKEN_MINT_PUBKEY: &str = "FAurynpWGGxrqmjiFUbCokq27QoJLF7u32UGhL2FQB78";
     pub const STAKING_PDA_SEED: &[u8] = b"nft_staking";
 }
 
@@ -258,8 +269,14 @@ pub mod nft_staking {
             }
 
             // determine user_staking_account pda
-            if user_staking_account.to_account_info().owner != &id() || user_staking_account.index != winner_staking_index[index / 2] || user_staking_account.wallet != winner[index / 2] {
-                return Err(ErrorCode::InvalidAccounts.into());
+            if user_staking_account.to_account_info().owner != &id() {
+                return Err(ErrorCode::OwnerNotId.into());
+            }
+            if user_staking_account.index != winner_staking_index[index / 2] {
+                return Err(ErrorCode::DifferentIndex.into());
+            }
+            if user_staking_account.wallet != winner[index / 2] {
+                return Err(ErrorCode::DifferentWallet.into());
             }
 
             // Check if nft is one of the rewards
@@ -607,9 +624,23 @@ pub mod nft_staking {
         }
 
         // close account if it's empty
-        if ctx.accounts.user_staking_account.nft_mint_keys.len() == 0 {
-            // ctx.accounts.user_staking_account.close(ctx.accounts.nft_to_authority.to_account_info())?;
-            close(ctx.accounts.user_staking_account.to_account_info(), ctx.accounts.nft_to_authority.to_account_info())?;
+        // if ctx.accounts.user_staking_account.nft_mint_keys.len() == 0 {
+        //     // ctx.accounts.user_staking_account.close(ctx.accounts.nft_to_authority.to_account_info())?;
+        //     close(ctx.accounts.user_staking_account.to_account_info(), ctx.accounts.nft_to_authority.to_account_info())?;
+        // }
+
+        Ok(())
+    }
+
+    pub fn close_user_staking<'a, 'b, 'c, 'info>(
+        ctx: Context<'a, 'b, 'c, 'info, Close<'info>>,
+        _user_staking_index: u32,
+        _nonce_user_staking: u8,
+    ) -> ProgramResult {
+        // determine if claimable is empty
+        if ctx.accounts.user_staking_account.nft_mint_keys.len() > 0
+        {
+            return Err(ErrorCode::CantCloseBeforeUnstake.into());
         }
 
         Ok(())
@@ -1057,6 +1088,21 @@ pub struct Unstake<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(_user_staking_index: u32, _nonce_user_staking: u8)]
+pub struct Close<'info> {
+    #[account(mut)]
+    pub nft_to_authority: Signer<'info>,
+
+    #[account(
+        mut,
+        close = nft_to_authority,
+        seeds = [ _user_staking_index.to_string().as_ref(), nft_to_authority.key().as_ref() ],
+        bump = _nonce_user_staking,
+    )]
+    pub user_staking_account: Box<Account<'info, UserStakingAccount>>,
+}
+
+#[derive(Accounts)]
 #[instruction(nonce_staking: u8, _user_staking_index: u32, _nonce_user_staking: u8)]
 pub struct Claim<'info> {
     pub nft_to_authority: Signer<'info>,
@@ -1210,6 +1256,14 @@ pub enum ErrorCode {
     IncorrectOwner, // 6018, 0x1782
     #[msg("8 byte discriminator did not match what was expected")]
     AccountDiscriminatorMismatch, // 6019, 0x1783
+    #[msg("Can't close before unstaking all.")]
+    CantCloseBeforeUnstake, // 6020, 0x1784 
+    #[msg("OwnerNotId")]
+    OwnerNotId, // 6021, 0x1784 
+    #[msg("DifferentIndex.")]
+    DifferentIndex, // 6022, 0x1784 
+    #[msg("DifferentWallet")]
+    DifferentWallet // 6023, 0x1784 
 }
 
 // Asserts the signer is admin

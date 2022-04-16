@@ -1410,16 +1410,6 @@ describe('nft-staking', () => {
         }
       );
     }
-
-    await assert.rejects(
-      async () => {
-        await program.account.userStakingAccount.fetch(userStakingPubkey);
-      },
-      {
-        message: 'Account does not exist ' + userStakingPubkey.toString(),
-      }
-    );
-    // assert.equal(userStakingAccount.nftMintKeys.toString(), [].toString());
   });
 
   it('Next stake success with empty-authorized-name-starts', async () => {
@@ -2053,6 +2043,31 @@ describe('nft-staking', () => {
       oldBalance + amount
     );
   });
+
+  it('Close user staking account', async () => {
+      await program.rpc.closeUserStaking(
+        userStakingIndex,
+        userStakingBump,
+        {
+          accounts: {
+            nftToAuthority: provider.wallet.publicKey,
+            userStakingAccount: userStakingPubkey,
+            // systemProgram: anchor.web3.SystemProgram.programId,
+            // tokenProgram: TOKEN_PROGRAM_ID,
+            // rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+          },
+        }
+      );
+      
+      await assert.rejects(
+        async () => {
+          await program.account.userStakingAccount.fetch(userStakingPubkey);
+        },
+        {
+          message: 'Account does not exist ' + userStakingPubkey.toString(),
+        }
+      );
+    });
 });
 
 async function getTokenBalance(pubkey: PublicKey) {
