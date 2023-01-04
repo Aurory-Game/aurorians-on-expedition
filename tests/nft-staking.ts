@@ -355,20 +355,15 @@ describe("nft-staking", () => {
     // Old balance
     let oldBalance = await getTokenBalance(userRandomTokenAccount);
     let amount = 2;
-    await program.rpc.transferTo(
-      stakingBump,
-      randomVaultBump,
-      new anchor.BN(amount),
-      {
-        accounts: {
-          sourceTokenAccount: randomVaultPubkey,
-          destTokenAccount: userRandomTokenAccount,
-          stakingAccount: stakingPubkey,
-          admin: provider.wallet.publicKey,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        },
-      }
-    );
+    await program.rpc.transferTo(stakingBump, new anchor.BN(amount), {
+      accounts: {
+        sourceTokenAccount: randomVaultPubkey,
+        destTokenAccount: userRandomTokenAccount,
+        stakingAccount: stakingPubkey,
+        admin: provider.wallet.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      },
+    });
 
     assert.equal(
       await getTokenBalance(userRandomTokenAccount),

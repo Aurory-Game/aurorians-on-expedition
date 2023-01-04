@@ -775,6 +775,46 @@ pub mod nft_staking {
 
         Ok(())
     }
+
+    // Allows to transfer any spl token owned by the staking account. Used to retrieve wrongly sent airdrops.
+    #[access_control(is_admin(&ctx.accounts.staking_account, &ctx.accounts.admin))]
+    pub fn transfer_to(ctx: Context<TransferTo>, nonce_staking: u8, amount: u64) -> ProgramResult {
+        // compute staking account signer seeds
+        let staking_account_seeds = &[constants::STAKING_PDA_SEED.as_ref(), &[nonce_staking]];
+        let staking_account_signer = &staking_account_seeds[..];
+
+        // transfer aury from vault
+        spl_token_transfer(TokenTransferParams {
+            source: ctx.accounts.source_token_account.to_account_info(),
+            destination: ctx.accounts.dest_token_account.to_account_info(),
+            amount: amount,
+            authority: ctx.accounts.staking_account.to_account_info(),
+            authority_signer_seeds: staking_account_signer,
+            token_program: ctx.accounts.token_program.to_account_info(),
+        })?;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+#[instruction(nonce_staking: u8)]
+pub struct TransferTo<'info> {
+    #[account(mut)]
+    pub source_token_account: Box<Account<'info, TokenAccount>>,
+    #[account(mut)]
+    pub dest_token_account: Box<Account<'info, TokenAccount>>,
+
+    #[account(
+        mut,
+        seeds = [ constants::STAKING_PDA_SEED.as_ref() ],
+        bump = nonce_staking,
+        constraint = !staking_account.freeze_program,
+    )]
+    pub staking_account: Box<Account<'info, StakingAccount>>,
+
+    pub admin: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
