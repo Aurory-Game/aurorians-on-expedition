@@ -7,7 +7,7 @@ use spl_token::{instruction::AuthorityType, state::AccountState};
 use arrayref::array_ref;
 
 #[cfg(all(not(feature = "local-testing"), not(feature = "aurorynet")))]
-declare_id!("AoEJc7sKCPJWxVPPiaoAzBNR9Z47kVfYeiwvTdkMLcQ7");
+declare_id!("EXpwP3pqPzA4arF8i89w7smtvxHzyYETmCpPspLPrR7J");
 #[cfg(feature = "local-testing")]
 declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 #[cfg(feature = "aurorynet")]

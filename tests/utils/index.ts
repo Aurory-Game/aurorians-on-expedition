@@ -1,13 +1,13 @@
-import { programs } from '@metaplex/js';
-import { Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
+import { programs } from "@metaplex/js";
+import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   MintLayout,
   TOKEN_PROGRAM_ID,
-} from '@solana/spl-token';
-import { Token } from '@solana/spl-token';
-import { TokenInstructions } from '@project-serum/serum';
-import { web3, Provider } from '@project-serum/anchor';
+} from "@solana/spl-token";
+import { Token } from "@solana/spl-token";
+import { TokenInstructions } from "@project-serum/serum";
+import { web3, Provider } from "@project-serum/anchor";
 
 const { Metadata, MetadataDataData, CreateMetadata, Creator } =
   programs.metadata;
@@ -72,7 +72,7 @@ export async function createMint(
   const metadataPDA = await Metadata.getPDA(mint.publicKey);
   const metadataData = new MetadataDataData({
     name: data.name,
-    symbol: '',
+    symbol: "",
     uri: json_url,
     sellerFeeBasisPoints: data.seller_fee_basis_points,
     creators: [
@@ -111,7 +111,7 @@ export async function setMintAuthority(
       TOKEN_PROGRAM_ID,
       mint,
       newAuthority,
-      'MintTokens',
+      "MintTokens",
       provider.wallet.publicKey,
       []
     )
@@ -142,9 +142,10 @@ export async function mintToAccount(
 export async function createTokenAccount(
   provider: Provider,
   mint: PublicKey,
-  owner: PublicKey
+  owner: PublicKey,
+  vaultKp?: Keypair
 ) {
-  const vault = Keypair.generate();
+  const vault = vaultKp ?? Keypair.generate();
   const tx = new Transaction();
   tx.add(
     ...(await createTokenAccountInstrs(provider, vault.publicKey, mint, owner))
@@ -195,7 +196,7 @@ export async function createTokenMint(
       payer.publicKey,
       1 * web3.LAMPORTS_PER_SOL
     ),
-    'confirmed'
+    "confirmed"
   );
 
   const token = new Token(
@@ -233,4 +234,23 @@ export async function createTokenMint(
 
   await provider.send(transaction, [mintAccount]);
   return token;
+}
+
+export async function createAssociatedTokenAccount(
+  provider: Provider,
+  mint: PublicKey,
+  ata: PublicKey,
+  owner: PublicKey
+) {
+  const tx = new Transaction({ feePayer: provider.wallet.publicKey }).add(
+    Token.createAssociatedTokenAccountInstruction(
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+      TOKEN_PROGRAM_ID,
+      mint,
+      ata,
+      owner,
+      provider.wallet.publicKey
+    )
+  );
+  await provider.send(tx);
 }
